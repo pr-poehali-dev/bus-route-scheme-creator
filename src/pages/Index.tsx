@@ -13,6 +13,7 @@ interface Stop {
   name: string;
   x: number;
   y: number;
+  labelPosition: 'top' | 'bottom' | 'left' | 'right';
 }
 
 interface Route {
@@ -42,7 +43,7 @@ const COLORS = [
 
 const Index = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [tool, setTool] = useState<'stop' | 'line' | 'move'>('stop');
+  const [tool, setTool] = useState<'stop' | 'line' | 'move' | 'connect'>('stop');
   const [selectedColor, setSelectedColor] = useState(COLORS[0]);
   const [stops, setStops] = useState<Stop[]>([]);
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -53,10 +54,12 @@ const Index = () => {
   const [draggedStop, setDraggedStop] = useState<string | null>(null);
   const [newStopName, setNewStopName] = useState('');
   const [newRouteNumber, setNewRouteNumber] = useState('');
+  const [selectedStops, setSelectedStops] = useState<string[]>([]);
+  const [selectedStopForLabel, setSelectedStopForLabel] = useState<string | null>(null);
 
   useEffect(() => {
     drawCanvas();
-  }, [stops, lines, currentLine, draggedStop]);
+  }, [stops, lines, currentLine, draggedStop, selectedStops]);
 
   const drawCanvas = () => {
     const canvas = canvasRef.current;
@@ -117,7 +120,9 @@ const Index = () => {
     }
 
     stops.forEach((stop) => {
-      ctx.fillStyle = '#FFFFFF';
+      const isSelected = selectedStops.includes(stop.id);
+      
+      ctx.fillStyle = isSelected ? selectedColor : '#FFFFFF';
       ctx.strokeStyle = '#1A1F2C';
       ctx.lineWidth = 3;
       ctx.beginPath();
@@ -127,8 +132,33 @@ const Index = () => {
 
       ctx.fillStyle = '#1A1F2C';
       ctx.font = '12px Roboto';
+      
+      let textX = stop.x;
+      let textY = stop.y - 15;
       ctx.textAlign = 'center';
-      ctx.fillText(stop.name, stop.x, stop.y - 15);
+      
+      switch (stop.labelPosition) {
+        case 'top':
+          textY = stop.y - 15;
+          ctx.textAlign = 'center';
+          break;
+        case 'bottom':
+          textY = stop.y + 25;
+          ctx.textAlign = 'center';
+          break;
+        case 'left':
+          textX = stop.x - 15;
+          textY = stop.y + 4;
+          ctx.textAlign = 'right';
+          break;
+        case 'right':
+          textX = stop.x + 15;
+          textY = stop.y + 4;
+          ctx.textAlign = 'left';
+          break;
+      }
+      
+      ctx.fillText(stop.name, textX, textY);
     });
   };
 
@@ -164,6 +194,7 @@ const Index = () => {
         name: newStopName,
         x,
         y,
+        labelPosition: 'top',
       };
       setStops([...stops, newStop]);
       setNewStopName('');
@@ -185,6 +216,37 @@ const Index = () => {
       const stop = findStopAtPosition(x, y);
       if (stop) {
         setDraggedStop(stop.id);
+      }
+    } else if (tool === 'connect') {
+      const stop = findStopAtPosition(x, y);
+      if (stop) {
+        if (!selectedRoute) {
+          toast.error('Выберите маршрут');
+          return;
+        }
+        
+        if (selectedStops.includes(stop.id)) {
+          setSelectedStops(selectedStops.filter(id => id !== stop.id));
+        } else {
+          setSelectedStops([...selectedStops, stop.id]);
+          
+          if (selectedStops.length > 0) {
+            const lastStopId = selectedStops[selectedStops.length - 1];
+            const lastStop = stops.find(s => s.id === lastStopId);
+            if (lastStop) {
+              const newLine: Line = {
+                id: Date.now().toString(),
+                routeId: selectedRoute,
+                points: [{ x: lastStop.x, y: lastStop.y }, { x: stop.x, y: stop.y }],
+                color: selectedColor,
+              };
+              setLines([...lines, newLine]);
+              addStopToRoute(selectedRoute, stop.id);
+            }
+          } else {
+            addStopToRoute(selectedRoute, stop.id);
+          }
+        }
       }
     }
   };
@@ -240,13 +302,23 @@ const Index = () => {
 
   const addStopToRoute = (routeId: string, stopId: string) => {
     setRoutes(
-      routes.map((route) =>
-        route.id === routeId
-          ? { ...route, stops: [...route.stops, stopId] }
-          : route
+      routes.map((route) => {
+        if (route.id === routeId && !route.stops.includes(stopId)) {
+          return { ...route, stops: [...route.stops, stopId] };
+        }
+        return route;
+      })
+    );
+  };
+
+  const changeLabelPosition = (stopId: string, position: 'top' | 'bottom' | 'left' | 'right') => {
+    setStops(
+      stops.map((stop) =>
+        stop.id === stopId ? { ...stop, labelPosition: position } : stop
       )
     );
-    toast.success('Остановка добавлена к маршруту');
+    setSelectedStopForLabel(null);
+    toast.success('Позиция названия изменена');
   };
 
   const exportToJSON = () => {
@@ -315,6 +387,30 @@ const Index = () => {
             >
               <Icon name="Move" size={16} className="mr-1" />
               Перемещение
+            </Button>
+          </div>
+          <div className="flex gap-2 mt-2">
+            <Button
+              variant={tool === 'connect' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setTool('connect');
+                setSelectedStops([]);
+              }}
+              className="flex-1"
+            >
+              <Icon name="Link" size={16} className="mr-1" />
+              Связать
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedStops([])}
+              className="flex-1"
+              disabled={selectedStops.length === 0}
+            >
+              <Icon name="X" size={16} className="mr-1" />
+              Сброс
             </Button>
           </div>
         </div>
@@ -422,10 +518,56 @@ const Index = () => {
             <div className="space-y-2">
               {stops.map((stop) => (
                 <Card key={stop.id} className="p-2">
-                  <div className="flex items-center gap-2">
-                    <Icon name="MapPin" size={14} className="text-gray-500" />
-                    <span className="text-sm">{stop.name}</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Icon name="MapPin" size={14} className="text-gray-500" />
+                      <span className="text-sm">{stop.name}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2"
+                      onClick={() => setSelectedStopForLabel(stop.id)}
+                    >
+                      <Icon name="AlignCenter" size={12} />
+                    </Button>
                   </div>
+                  {selectedStopForLabel === stop.id && (
+                    <div className="mt-2 grid grid-cols-4 gap-1">
+                      <Button
+                        size="sm"
+                        variant={stop.labelPosition === 'top' ? 'default' : 'outline'}
+                        className="text-xs h-7"
+                        onClick={() => changeLabelPosition(stop.id, 'top')}
+                      >
+                        <Icon name="ArrowUp" size={12} />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={stop.labelPosition === 'bottom' ? 'default' : 'outline'}
+                        className="text-xs h-7"
+                        onClick={() => changeLabelPosition(stop.id, 'bottom')}
+                      >
+                        <Icon name="ArrowDown" size={12} />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={stop.labelPosition === 'left' ? 'default' : 'outline'}
+                        className="text-xs h-7"
+                        onClick={() => changeLabelPosition(stop.id, 'left')}
+                      >
+                        <Icon name="ArrowLeft" size={12} />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={stop.labelPosition === 'right' ? 'default' : 'outline'}
+                        className="text-xs h-7"
+                        onClick={() => changeLabelPosition(stop.id, 'right')}
+                      >
+                        <Icon name="ArrowRight" size={12} />
+                      </Button>
+                    </div>
+                  )}
                 </Card>
               ))}
             </div>
