@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Icon from '@/components/ui/icon';
 import { toast } from 'sonner';
 
@@ -32,6 +33,7 @@ interface Line {
   color: string;
   lineWidth: number;
   lineStyle: 'solid' | 'dashed';
+  offset?: number;
 }
 
 const COLORS = [
@@ -47,7 +49,7 @@ const COLORS = [
 
 const Index = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [tool, setTool] = useState<'stop' | 'line' | 'move' | 'connect' | 'delete'>('stop');
+  const [tool, setTool] = useState<'stop' | 'line' | 'move' | 'connect' | 'delete' | 'edit'>('stop');
   const [selectedColor, setSelectedColor] = useState(COLORS[0]);
   const [stops, setStops] = useState<Stop[]>([]);
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -62,10 +64,13 @@ const Index = () => {
   const [selectedStopForLabel, setSelectedStopForLabel] = useState<string | null>(null);
   const [lineWidth, setLineWidth] = useState(4);
   const [lineStyle, setLineStyle] = useState<'solid' | 'dashed'>('solid');
+  const [selectedLine, setSelectedLine] = useState<string | null>(null);
+  const [draggedPoint, setDraggedPoint] = useState<{ lineId: string; pointIndex: number } | null>(null);
+  const [parallelOffset, setParallelOffset] = useState(0);
 
   useEffect(() => {
     drawCanvas();
-  }, [stops, lines, currentLine, draggedStop, selectedStops, lineWidth, lineStyle]);
+  }, [stops, lines, currentLine, draggedStop, selectedStops, lineWidth, lineStyle, selectedLine, draggedPoint, parallelOffset]);
 
   const drawCanvas = () => {
     const canvas = canvasRef.current;
@@ -99,6 +104,9 @@ const Index = () => {
 
     lines.forEach((line) => {
       if (line.points.length > 1) {
+        const offset = line.offset || 0;
+        const isSelected = selectedLine === line.id;
+        
         ctx.strokeStyle = line.color;
         ctx.lineWidth = line.lineWidth;
         ctx.lineCap = 'round';
@@ -111,12 +119,40 @@ const Index = () => {
         }
         
         ctx.beginPath();
-        ctx.moveTo(line.points[0].x, line.points[0].y);
-        for (let i = 1; i < line.points.length; i++) {
-          ctx.lineTo(line.points[i].x, line.points[i].y);
+        if (offset === 0) {
+          ctx.moveTo(line.points[0].x, line.points[0].y);
+          for (let i = 1; i < line.points.length; i++) {
+            ctx.lineTo(line.points[i].x, line.points[i].y);
+          }
+        } else {
+          const offsetPoints = line.points.map((p, i) => {
+            if (i === 0 || i === line.points.length - 1) return p;
+            const prev = line.points[i - 1];
+            const next = line.points[i + 1];
+            const dx1 = p.x - prev.x;
+            const dy1 = p.y - prev.y;
+            const len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+            const dx2 = next.x - p.x;
+            const dy2 = next.y - p.y;
+            const len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+            const perpX = -(dy1 / len1 + dy2 / len2) / 2;
+            const perpY = (dx1 / len1 + dx2 / len2) / 2;
+            return { x: p.x + perpX * offset, y: p.y + perpY * offset };
+          });
+          ctx.moveTo(offsetPoints[0].x, offsetPoints[0].y);
+          for (let i = 1; i < offsetPoints.length; i++) {
+            ctx.lineTo(offsetPoints[i].x, offsetPoints[i].y);
+          }
         }
         ctx.stroke();
         ctx.setLineDash([]);
+        
+        if (isSelected && tool === 'edit') {
+          line.points.forEach((point) => {
+            ctx.fillStyle = '#F97316';
+            ctx.fillRect(point.x - 4, point.y - 4, 8, 8);
+          });
+        }
       }
     });
 
@@ -249,6 +285,25 @@ const Index = () => {
           deleteLine(line.id);
         }
       }
+    } else if (tool === 'edit') {
+      const line = findLineAtPosition(x, y);
+      if (line) {
+        setSelectedLine(line.id);
+      } else {
+        if (selectedLine) {
+          const line = lines.find(l => l.id === selectedLine);
+          if (line) {
+            for (let i = 0; i < line.points.length; i++) {
+              const p = line.points[i];
+              if (Math.abs(p.x - x) < 8 && Math.abs(p.y - y) < 8) {
+                setDraggedPoint({ lineId: line.id, pointIndex: i });
+                return;
+              }
+            }
+          }
+        }
+        setSelectedLine(null);
+      }
     } else if (tool === 'connect') {
       const stop = findStopAtPosition(x, y);
       if (stop) {
@@ -273,6 +328,7 @@ const Index = () => {
                 color: selectedColor,
                 lineWidth: lineWidth,
                 lineStyle: lineStyle,
+                offset: parallelOffset,
               };
               setLines([...lines, newLine]);
               addStopToRoute(selectedRoute, stop.id);
@@ -296,6 +352,17 @@ const Index = () => {
           stop.id === draggedStop ? { ...stop, x, y } : stop
         )
       );
+    } else if (tool === 'edit' && draggedPoint) {
+      setLines(
+        lines.map((line) => {
+          if (line.id === draggedPoint.lineId) {
+            const newPoints = [...line.points];
+            newPoints[draggedPoint.pointIndex] = { x, y };
+            return { ...line, points: newPoints };
+          }
+          return line;
+        })
+      );
     }
   };
 
@@ -308,6 +375,7 @@ const Index = () => {
         color: selectedColor,
         lineWidth: lineWidth,
         lineStyle: lineStyle,
+        offset: parallelOffset,
       };
       setLines([...lines, newLine]);
       setCurrentLine([]);
@@ -315,6 +383,8 @@ const Index = () => {
       toast.success('Линия добавлена');
     } else if (tool === 'move') {
       setDraggedStop(null);
+    } else if (tool === 'edit') {
+      setDraggedPoint(null);
     }
   };
 
@@ -421,7 +491,17 @@ const Index = () => {
   };
 
   const exportToJSON = () => {
-    const data = { stops, routes, lines };
+    const data = {
+      version: '1.0',
+      stops,
+      routes,
+      lines,
+      settings: {
+        colors: COLORS,
+        defaultLineWidth: lineWidth,
+        defaultLineStyle: lineStyle,
+      },
+    };
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: 'application/json',
     });
@@ -431,6 +511,37 @@ const Index = () => {
     link.download = 'transport-scheme.json';
     link.click();
     toast.success('Схема экспортирована в JSON');
+  };
+
+  const importFromJSON = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = (e) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target?.result as string);
+          
+          if (data.stops) setStops(data.stops);
+          if (data.routes) setRoutes(data.routes);
+          if (data.lines) setLines(data.lines);
+          if (data.settings) {
+            if (data.settings.defaultLineWidth) setLineWidth(data.settings.defaultLineWidth);
+            if (data.settings.defaultLineStyle) setLineStyle(data.settings.defaultLineStyle);
+          }
+          
+          toast.success('Схема импортирована');
+        } catch (error) {
+          toast.error('Ошибка чтения файла');
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
   };
 
   const exportToPNG = () => {
@@ -457,303 +568,392 @@ const Index = () => {
           <p className="text-sm text-gray-500 mt-1">Транспортные маршруты</p>
         </div>
 
-        <div className="p-4 border-b border-gray-200">
-          <Label className="text-sm font-medium mb-2 block">Инструменты</Label>
-          <div className="flex gap-2">
-            <Button
-              variant={tool === 'stop' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setTool('stop')}
-              className="flex-1"
-            >
-              <Icon name="MapPin" size={16} className="mr-1" />
-              Остановка
-            </Button>
-            <Button
-              variant={tool === 'line' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setTool('line')}
-              className="flex-1"
-            >
-              <Icon name="Pencil" size={16} className="mr-1" />
-              Линия
-            </Button>
-            <Button
-              variant={tool === 'move' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setTool('move')}
-              className="flex-1"
-            >
-              <Icon name="Move" size={16} className="mr-1" />
-              Перемещение
-            </Button>
-          </div>
-          <div className="flex gap-2 mt-2">
-            <Button
-              variant={tool === 'connect' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => {
-                setTool('connect');
-                setSelectedStops([]);
-              }}
-              className="flex-1"
-            >
-              <Icon name="Link" size={16} className="mr-1" />
-              Связать
-            </Button>
-            <Button
-              variant={tool === 'delete' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setTool('delete')}
-              className="flex-1"
-            >
-              <Icon name="Trash2" size={16} className="mr-1" />
-              Удалить
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setSelectedStops([])}
-              className="flex-1"
-              disabled={selectedStops.length === 0}
-            >
-              <Icon name="X" size={16} className="mr-1" />
-              Сброс
-            </Button>
-          </div>
-        </div>
+        <Tabs defaultValue="tools" className="flex-1 flex flex-col">
+          <TabsList className="mx-4 mt-4">
+            <TabsTrigger value="tools" className="flex-1">Инструменты</TabsTrigger>
+            <TabsTrigger value="routes" className="flex-1">Маршруты</TabsTrigger>
+            <TabsTrigger value="settings" className="flex-1">Настройки</TabsTrigger>
+          </TabsList>
 
-        {tool === 'stop' && (
-          <div className="p-4 border-b border-gray-200">
-            <Label htmlFor="stop-name" className="text-sm font-medium">
-              Название остановки
-            </Label>
-            <Input
-              id="stop-name"
-              value={newStopName}
-              onChange={(e) => setNewStopName(e.target.value)}
-              placeholder="Например: Центральная"
-              className="mt-2"
-            />
-            <p className="text-xs text-gray-500 mt-2">
-              Кликните на карту для добавления
-            </p>
-          </div>
-        )}
-
-        <div className="p-4 border-b border-gray-200">
-          <Label className="text-sm font-medium mb-2 block">Цвет линии</Label>
-          <div className="grid grid-cols-4 gap-2">
-            {COLORS.map((color) => (
-              <button
-                key={color}
-                onClick={() => setSelectedColor(color)}
-                className={`w-full h-10 rounded-lg transition-all ${
-                  selectedColor === color
-                    ? 'ring-2 ring-offset-2 ring-gray-900 scale-105'
-                    : 'hover:scale-105'
-                }`}
-                style={{ backgroundColor: color }}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="p-4 border-b border-gray-200">
-          <Label className="text-sm font-medium mb-2 block">Толщина линии</Label>
-          <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min="2"
-              max="12"
-              value={lineWidth}
-              onChange={(e) => setLineWidth(Number(e.target.value))}
-              className="flex-1"
-            />
-            <span className="text-sm font-medium w-8">{lineWidth}px</span>
-          </div>
-        </div>
-
-        <div className="p-4 border-b border-gray-200">
-          <Label className="text-sm font-medium mb-2 block">Стиль линии</Label>
-          <div className="flex gap-2">
-            <Button
-              variant={lineStyle === 'solid' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setLineStyle('solid')}
-              className="flex-1"
-            >
-              <Icon name="Minus" size={16} className="mr-1" />
-              Сплошная
-            </Button>
-            <Button
-              variant={lineStyle === 'dashed' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setLineStyle('dashed')}
-              className="flex-1"
-            >
-              <Icon name="Grip" size={16} className="mr-1" />
-              Пунктир
-            </Button>
-          </div>
-        </div>
-
-        <div className="p-4 border-b border-gray-200">
-          <Label className="text-sm font-medium mb-2 block">Новый маршрут</Label>
-          <div className="flex gap-2">
-            <Input
-              value={newRouteNumber}
-              onChange={(e) => setNewRouteNumber(e.target.value)}
-              placeholder="№ маршрута"
-              className="flex-1"
-            />
-            <Button onClick={addRoute} size="sm">
-              <Icon name="Plus" size={16} />
-            </Button>
-          </div>
-        </div>
-
-        <ScrollArea className="flex-1">
-          <div className="p-4">
-            <Label className="text-sm font-medium mb-3 block">Маршруты</Label>
-            <div className="space-y-2">
-              {routes.map((route) => (
-                <Card
-                  key={route.id}
-                  className={`p-3 cursor-pointer transition-all ${
-                    selectedRoute === route.id
-                      ? 'ring-2 ring-gray-900'
-                      : 'hover:shadow-md'
-                  }`}
-                  onClick={() => setSelectedRoute(route.id)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="w-4 h-4 rounded-full"
-                        style={{ backgroundColor: route.color }}
-                      />
-                      <span className="font-medium">№{route.number}</span>
-                    </div>
+          <TabsContent value="tools" className="flex-1 overflow-hidden">
+            <ScrollArea className="h-full">
+              <div className="p-4 space-y-4">
+                <div>
+                  <Label className="text-sm font-medium mb-2 block">Основные</Label>
+                  <div className="grid grid-cols-2 gap-2">
                     <Button
+                      variant={tool === 'stop' ? 'default' : 'outline'}
                       size="sm"
-                      variant="ghost"
-                      className="h-6 px-2"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteRoute(route.id);
+                      onClick={() => setTool('stop')}
+                    >
+                      <Icon name="MapPin" size={16} className="mr-1" />
+                      Остановка
+                    </Button>
+                    <Button
+                      variant={tool === 'line' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setTool('line')}
+                    >
+                      <Icon name="Pencil" size={16} className="mr-1" />
+                      Линия
+                    </Button>
+                    <Button
+                      variant={tool === 'connect' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => {
+                        setTool('connect');
+                        setSelectedStops([]);
                       }}
                     >
-                      <Icon name="Trash2" size={12} className="text-red-500" />
+                      <Icon name="Link" size={16} className="mr-1" />
+                      Связать
+                    </Button>
+                    <Button
+                      variant={tool === 'move' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setTool('move')}
+                    >
+                      <Icon name="Move" size={16} className="mr-1" />
+                      Перемещение
+                    </Button>
+                    <Button
+                      variant={tool === 'edit' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setTool('edit')}
+                    >
+                      <Icon name="Edit" size={16} className="mr-1" />
+                      Редактировать
+                    </Button>
+                    <Button
+                      variant={tool === 'delete' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setTool('delete')}
+                    >
+                      <Icon name="Trash2" size={16} className="mr-1" />
+                      Удалить
                     </Button>
                   </div>
-                  <div className="mt-2 text-xs text-gray-500">
-                    Остановок: {route.stops.length}
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {stops
-                      .filter((stop) => !route.stops.includes(stop.id))
-                      .map((stop) => (
-                        <Button
-                          key={stop.id}
-                          size="sm"
-                          variant="outline"
-                          className="text-xs h-6"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            addStopToRoute(route.id, stop.id);
-                          }}
-                        >
-                          + {stop.name}
-                        </Button>
-                      ))}
-                  </div>
-                </Card>
-              ))}
-            </div>
+                </div>
 
-            <Separator className="my-4" />
-
-            <Label className="text-sm font-medium mb-3 block">Остановки</Label>
-            <div className="space-y-2">
-              {stops.map((stop) => (
-                <Card key={stop.id} className="p-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Icon name="MapPin" size={14} className="text-gray-500" />
-                      <span className="text-sm">{stop.name}</span>
-                    </div>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 px-2"
-                        onClick={() => setSelectedStopForLabel(stop.id)}
-                      >
-                        <Icon name="AlignCenter" size={12} />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 px-2"
-                        onClick={() => deleteStop(stop.id)}
-                      >
-                        <Icon name="Trash2" size={12} className="text-red-500" />
-                      </Button>
-                    </div>
+                {tool === 'stop' && (
+                  <div>
+                    <Label htmlFor="stop-name" className="text-sm font-medium">
+                      Название остановки
+                    </Label>
+                    <Input
+                      id="stop-name"
+                      value={newStopName}
+                      onChange={(e) => setNewStopName(e.target.value)}
+                      placeholder="Например: Центральная"
+                      className="mt-2"
+                    />
+                    <p className="text-xs text-gray-500 mt-2">
+                      Кликните на карту для добавления
+                    </p>
                   </div>
-                  {selectedStopForLabel === stop.id && (
-                    <div className="mt-2 grid grid-cols-4 gap-1">
-                      <Button
-                        size="sm"
-                        variant={stop.labelPosition === 'top' ? 'default' : 'outline'}
-                        className="text-xs h-7"
-                        onClick={() => changeLabelPosition(stop.id, 'top')}
-                      >
-                        <Icon name="ArrowUp" size={12} />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={stop.labelPosition === 'bottom' ? 'default' : 'outline'}
-                        className="text-xs h-7"
-                        onClick={() => changeLabelPosition(stop.id, 'bottom')}
-                      >
-                        <Icon name="ArrowDown" size={12} />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={stop.labelPosition === 'left' ? 'default' : 'outline'}
-                        className="text-xs h-7"
-                        onClick={() => changeLabelPosition(stop.id, 'left')}
-                      >
-                        <Icon name="ArrowLeft" size={12} />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant={stop.labelPosition === 'right' ? 'default' : 'outline'}
-                        className="text-xs h-7"
-                        onClick={() => changeLabelPosition(stop.id, 'right')}
-                      >
-                        <Icon name="ArrowRight" size={12} />
-                      </Button>
-                    </div>
-                  )}
-                </Card>
-              ))}
-            </div>
-          </div>
-        </ScrollArea>
+                )}
 
-        <div className="p-4 border-t border-gray-200 space-y-2">
-          <Button onClick={exportToPNG} className="w-full" variant="default">
-            <Icon name="Download" size={16} className="mr-2" />
-            Экспорт в PNG
-          </Button>
-          <Button onClick={exportToJSON} className="w-full" variant="outline">
-            <Icon name="FileJson" size={16} className="mr-2" />
-            Экспорт в JSON
-          </Button>
-        </div>
+                {tool === 'connect' && selectedStops.length > 0 && (
+                  <div>
+                    <Label className="text-sm font-medium">Выбрано остановок: {selectedStops.length}</Label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedStops([])}
+                      className="w-full mt-2"
+                    >
+                      <Icon name="X" size={16} className="mr-1" />
+                      Сбросить выбор
+                    </Button>
+                  </div>
+                )}
+
+                {tool === 'edit' && selectedLine && (
+                  <div>
+                    <Label className="text-sm font-medium mb-2 block">Редактирование линии</Label>
+                    <p className="text-xs text-gray-500 mb-2">
+                      Перетаскивайте оранжевые точки для изменения формы линии
+                    </p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedLine(null);
+                        setTool('stop');
+                      }}
+                      className="w-full"
+                    >
+                      Завершить редактирование
+                    </Button>
+                  </div>
+                )}
+
+                <Separator />
+
+                <div>
+                  <Label className="text-sm font-medium mb-3 block">Остановки</Label>
+                  <div className="space-y-2">
+                    {stops.map((stop) => (
+                      <Card key={stop.id} className="p-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Icon name="MapPin" size={14} className="text-gray-500" />
+                            <span className="text-sm">{stop.name}</span>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2"
+                              onClick={() => setSelectedStopForLabel(stop.id)}
+                            >
+                              <Icon name="AlignCenter" size={12} />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2"
+                              onClick={() => deleteStop(stop.id)}
+                            >
+                              <Icon name="Trash2" size={12} className="text-red-500" />
+                            </Button>
+                          </div>
+                        </div>
+                        {selectedStopForLabel === stop.id && (
+                          <div className="mt-2 grid grid-cols-4 gap-1">
+                            <Button
+                              size="sm"
+                              variant={stop.labelPosition === 'top' ? 'default' : 'outline'}
+                              className="text-xs h-7"
+                              onClick={() => changeLabelPosition(stop.id, 'top')}
+                            >
+                              <Icon name="ArrowUp" size={12} />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={stop.labelPosition === 'bottom' ? 'default' : 'outline'}
+                              className="text-xs h-7"
+                              onClick={() => changeLabelPosition(stop.id, 'bottom')}
+                            >
+                              <Icon name="ArrowDown" size={12} />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={stop.labelPosition === 'left' ? 'default' : 'outline'}
+                              className="text-xs h-7"
+                              onClick={() => changeLabelPosition(stop.id, 'left')}
+                            >
+                              <Icon name="ArrowLeft" size={12} />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={stop.labelPosition === 'right' ? 'default' : 'outline'}
+                              className="text-xs h-7"
+                              onClick={() => changeLabelPosition(stop.id, 'right')}
+                            >
+                              <Icon name="ArrowRight" size={12} />
+                            </Button>
+                          </div>
+                        )}
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="routes" className="flex-1 overflow-hidden">
+            <ScrollArea className="h-full">
+              <div className="p-4 space-y-4">
+                <div>
+                  <Label className="text-sm font-medium mb-2 block">Новый маршрут</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={newRouteNumber}
+                      onChange={(e) => setNewRouteNumber(e.target.value)}
+                      placeholder="№ маршрута"
+                      className="flex-1"
+                    />
+                    <Button onClick={addRoute} size="sm">
+                      <Icon name="Plus" size={16} />
+                    </Button>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div>
+                  <Label className="text-sm font-medium mb-3 block">Список маршрутов</Label>
+                  <div className="space-y-2">
+                    {routes.map((route) => (
+                      <Card
+                        key={route.id}
+                        className={`p-3 cursor-pointer transition-all ${
+                          selectedRoute === route.id
+                            ? 'ring-2 ring-gray-900'
+                            : 'hover:shadow-md'
+                        }`}
+                        onClick={() => setSelectedRoute(route.id)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-4 h-4 rounded-full"
+                              style={{ backgroundColor: route.color }}
+                            />
+                            <span className="font-medium">№{route.number}</span>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 px-2"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteRoute(route.id);
+                            }}
+                          >
+                            <Icon name="Trash2" size={12} className="text-red-500" />
+                          </Button>
+                        </div>
+                        <div className="mt-2 text-xs text-gray-500">
+                          Остановок: {route.stops.length}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {stops
+                            .filter((stop) => !route.stops.includes(stop.id))
+                            .map((stop) => (
+                              <Button
+                                key={stop.id}
+                                size="sm"
+                                variant="outline"
+                                className="text-xs h-6"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  addStopToRoute(route.id, stop.id);
+                                }}
+                              >
+                                + {stop.name}
+                              </Button>
+                            ))}
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </ScrollArea>
+          </TabsContent>
+
+          <TabsContent value="settings" className="flex-1 overflow-hidden">
+            <ScrollArea className="h-full">
+              <div className="p-4 space-y-4">
+                <div>
+                  <Label className="text-sm font-medium mb-2 block">Цвет линии</Label>
+                  <div className="grid grid-cols-4 gap-2">
+                    {COLORS.map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => setSelectedColor(color)}
+                        className={`w-full h-10 rounded-lg transition-all ${
+                          selectedColor === color
+                            ? 'ring-2 ring-offset-2 ring-gray-900 scale-105'
+                            : 'hover:scale-105'
+                        }`}
+                        style={{ backgroundColor: color }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium mb-2 block">Толщина линии</Label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min="2"
+                      max="12"
+                      value={lineWidth}
+                      onChange={(e) => setLineWidth(Number(e.target.value))}
+                      className="flex-1"
+                    />
+                    <span className="text-sm font-medium w-8">{lineWidth}px</span>
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium mb-2 block">Стиль линии</Label>
+                  <div className="flex gap-2">
+                    <Button
+                      variant={lineStyle === 'solid' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setLineStyle('solid')}
+                      className="flex-1"
+                    >
+                      <Icon name="Minus" size={16} className="mr-1" />
+                      Сплошная
+                    </Button>
+                    <Button
+                      variant={lineStyle === 'dashed' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setLineStyle('dashed')}
+                      className="flex-1"
+                    >
+                      <Icon name="Grip" size={16} className="mr-1" />
+                      Пунктир
+                    </Button>
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium mb-2 block">Параллельное смещение</Label>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Для параллельных линий на одном участке
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min="-20"
+                      max="20"
+                      value={parallelOffset}
+                      onChange={(e) => setParallelOffset(Number(e.target.value))}
+                      className="flex-1"
+                    />
+                    <span className="text-sm font-medium w-12">{parallelOffset}px</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setParallelOffset(0)}
+                    className="w-full mt-2"
+                  >
+                    Сбросить смещение
+                  </Button>
+                </div>
+
+                <Separator />
+
+                <div>
+                  <Label className="text-sm font-medium mb-3 block">Импорт/Экспорт</Label>
+                  <div className="space-y-2">
+                    <Button onClick={importFromJSON} className="w-full" variant="outline">
+                      <Icon name="Upload" size={16} className="mr-2" />
+                      Импорт из JSON
+                    </Button>
+                    <Button onClick={exportToJSON} className="w-full" variant="outline">
+                      <Icon name="FileJson" size={16} className="mr-2" />
+                      Экспорт в JSON
+                    </Button>
+                    <Button onClick={exportToPNG} className="w-full" variant="default">
+                      <Icon name="Download" size={16} className="mr-2" />
+                      Экспорт в PNG
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </ScrollArea>
+          </TabsContent>
+        </Tabs>
       </div>
 
       <div className="flex-1 flex items-center justify-center p-8">
