@@ -21,11 +21,18 @@ const Index = () => {
 
   const handleAddStop = (name: string) => {
     const id = getNextStopId();
+    
+    // Размещаем остановки в центре холста со смещением
+    const centerX = 1500;
+    const centerY = 1000;
+    const offset = stops.length * 100;
+    const angle = (stops.length * 45 * Math.PI) / 180;
+    
     const newStop: Stop = {
       id,
       name,
-      x: 200 + stops.length * 80,
-      y: 200,
+      x: centerX + Math.cos(angle) * offset,
+      y: centerY + Math.sin(angle) * offset,
       labelPosition: 'top',
       isTerminal: false,
     };
