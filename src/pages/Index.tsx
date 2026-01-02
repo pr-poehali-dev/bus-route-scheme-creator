@@ -21,6 +21,8 @@ interface Route {
   number: string;
   color: string;
   stops: string[];
+  lineWidth: number;
+  lineStyle: 'solid' | 'dashed';
 }
 
 interface Line {
@@ -28,6 +30,8 @@ interface Line {
   routeId: string;
   points: { x: number; y: number }[];
   color: string;
+  lineWidth: number;
+  lineStyle: 'solid' | 'dashed';
 }
 
 const COLORS = [
@@ -43,7 +47,7 @@ const COLORS = [
 
 const Index = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [tool, setTool] = useState<'stop' | 'line' | 'move' | 'connect'>('stop');
+  const [tool, setTool] = useState<'stop' | 'line' | 'move' | 'connect' | 'delete'>('stop');
   const [selectedColor, setSelectedColor] = useState(COLORS[0]);
   const [stops, setStops] = useState<Stop[]>([]);
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -56,10 +60,12 @@ const Index = () => {
   const [newRouteNumber, setNewRouteNumber] = useState('');
   const [selectedStops, setSelectedStops] = useState<string[]>([]);
   const [selectedStopForLabel, setSelectedStopForLabel] = useState<string | null>(null);
+  const [lineWidth, setLineWidth] = useState(4);
+  const [lineStyle, setLineStyle] = useState<'solid' | 'dashed'>('solid');
 
   useEffect(() => {
     drawCanvas();
-  }, [stops, lines, currentLine, draggedStop, selectedStops]);
+  }, [stops, lines, currentLine, draggedStop, selectedStops, lineWidth, lineStyle]);
 
   const drawCanvas = () => {
     const canvas = canvasRef.current;
@@ -94,29 +100,45 @@ const Index = () => {
     lines.forEach((line) => {
       if (line.points.length > 1) {
         ctx.strokeStyle = line.color;
-        ctx.lineWidth = 4;
+        ctx.lineWidth = line.lineWidth;
         ctx.lineCap = 'round';
         ctx.lineJoin = 'round';
+        
+        if (line.lineStyle === 'dashed') {
+          ctx.setLineDash([10, 5]);
+        } else {
+          ctx.setLineDash([]);
+        }
+        
         ctx.beginPath();
         ctx.moveTo(line.points[0].x, line.points[0].y);
         for (let i = 1; i < line.points.length; i++) {
           ctx.lineTo(line.points[i].x, line.points[i].y);
         }
         ctx.stroke();
+        ctx.setLineDash([]);
       }
     });
 
     if (currentLine.length > 1) {
       ctx.strokeStyle = selectedColor;
-      ctx.lineWidth = 4;
+      ctx.lineWidth = lineWidth;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+      
+      if (lineStyle === 'dashed') {
+        ctx.setLineDash([10, 5]);
+      } else {
+        ctx.setLineDash([]);
+      }
+      
       ctx.beginPath();
       ctx.moveTo(currentLine[0].x, currentLine[0].y);
       for (let i = 1; i < currentLine.length; i++) {
         ctx.lineTo(currentLine[i].x, currentLine[i].y);
       }
       ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     stops.forEach((stop) => {
@@ -217,6 +239,16 @@ const Index = () => {
       if (stop) {
         setDraggedStop(stop.id);
       }
+    } else if (tool === 'delete') {
+      const stop = findStopAtPosition(x, y);
+      if (stop) {
+        deleteStop(stop.id);
+      } else {
+        const line = findLineAtPosition(x, y);
+        if (line) {
+          deleteLine(line.id);
+        }
+      }
     } else if (tool === 'connect') {
       const stop = findStopAtPosition(x, y);
       if (stop) {
@@ -239,6 +271,8 @@ const Index = () => {
                 routeId: selectedRoute,
                 points: [{ x: lastStop.x, y: lastStop.y }, { x: stop.x, y: stop.y }],
                 color: selectedColor,
+                lineWidth: lineWidth,
+                lineStyle: lineStyle,
               };
               setLines([...lines, newLine]);
               addStopToRoute(selectedRoute, stop.id);
@@ -272,6 +306,8 @@ const Index = () => {
         routeId: selectedRoute,
         points: currentLine,
         color: selectedColor,
+        lineWidth: lineWidth,
+        lineStyle: lineStyle,
       };
       setLines([...lines, newLine]);
       setCurrentLine([]);
@@ -280,6 +316,67 @@ const Index = () => {
     } else if (tool === 'move') {
       setDraggedStop(null);
     }
+  };
+
+  const findLineAtPosition = (x: number, y: number): Line | null => {
+    for (const line of lines) {
+      for (let i = 0; i < line.points.length - 1; i++) {
+        const p1 = line.points[i];
+        const p2 = line.points[i + 1];
+        const dist = pointToSegmentDistance(x, y, p1.x, p1.y, p2.x, p2.y);
+        if (dist < 10) {
+          return line;
+        }
+      }
+    }
+    return null;
+  };
+
+  const pointToSegmentDistance = (px: number, py: number, x1: number, y1: number, x2: number, y2: number): number => {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const lenSq = dx * dx + dy * dy;
+    
+    if (lenSq === 0) return Math.sqrt((px - x1) ** 2 + (py - y1) ** 2);
+    
+    let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t));
+    
+    const projX = x1 + t * dx;
+    const projY = y1 + t * dy;
+    
+    return Math.sqrt((px - projX) ** 2 + (py - projY) ** 2);
+  };
+
+  const deleteStop = (stopId: string) => {
+    setStops(stops.filter(s => s.id !== stopId));
+    setRoutes(routes.map(r => ({
+      ...r,
+      stops: r.stops.filter(id => id !== stopId)
+    })));
+    setLines(lines.filter(line => {
+      const stopToDelete = stops.find(s => s.id === stopId);
+      if (!stopToDelete) return true;
+      
+      return !line.points.some(p => 
+        Math.abs(p.x - stopToDelete.x) < 5 && Math.abs(p.y - stopToDelete.y) < 5
+      );
+    }));
+    toast.success('Остановка удалена');
+  };
+
+  const deleteLine = (lineId: string) => {
+    setLines(lines.filter(l => l.id !== lineId));
+    toast.success('Линия удалена');
+  };
+
+  const deleteRoute = (routeId: string) => {
+    setRoutes(routes.filter(r => r.id !== routeId));
+    setLines(lines.filter(l => l.routeId !== routeId));
+    if (selectedRoute === routeId) {
+      setSelectedRoute(null);
+    }
+    toast.success('Маршрут удалён');
   };
 
   const addRoute = () => {
@@ -293,6 +390,8 @@ const Index = () => {
       number: newRouteNumber,
       color: selectedColor,
       stops: [],
+      lineWidth: lineWidth,
+      lineStyle: lineStyle,
     };
     setRoutes([...routes, newRoute]);
     setSelectedRoute(newRoute.id);
@@ -403,6 +502,15 @@ const Index = () => {
               Связать
             </Button>
             <Button
+              variant={tool === 'delete' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setTool('delete')}
+              className="flex-1"
+            >
+              <Icon name="Trash2" size={16} className="mr-1" />
+              Удалить
+            </Button>
+            <Button
               variant="outline"
               size="sm"
               onClick={() => setSelectedStops([])}
@@ -452,6 +560,45 @@ const Index = () => {
         </div>
 
         <div className="p-4 border-b border-gray-200">
+          <Label className="text-sm font-medium mb-2 block">Толщина линии</Label>
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min="2"
+              max="12"
+              value={lineWidth}
+              onChange={(e) => setLineWidth(Number(e.target.value))}
+              className="flex-1"
+            />
+            <span className="text-sm font-medium w-8">{lineWidth}px</span>
+          </div>
+        </div>
+
+        <div className="p-4 border-b border-gray-200">
+          <Label className="text-sm font-medium mb-2 block">Стиль линии</Label>
+          <div className="flex gap-2">
+            <Button
+              variant={lineStyle === 'solid' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setLineStyle('solid')}
+              className="flex-1"
+            >
+              <Icon name="Minus" size={16} className="mr-1" />
+              Сплошная
+            </Button>
+            <Button
+              variant={lineStyle === 'dashed' ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setLineStyle('dashed')}
+              className="flex-1"
+            >
+              <Icon name="Grip" size={16} className="mr-1" />
+              Пунктир
+            </Button>
+          </div>
+        </div>
+
+        <div className="p-4 border-b border-gray-200">
           <Label className="text-sm font-medium mb-2 block">Новый маршрут</Label>
           <div className="flex gap-2">
             <Input
@@ -480,12 +627,25 @@ const Index = () => {
                   }`}
                   onClick={() => setSelectedRoute(route.id)}
                 >
-                  <div className="flex items-center gap-2">
-                    <div
-                      className="w-4 h-4 rounded-full"
-                      style={{ backgroundColor: route.color }}
-                    />
-                    <span className="font-medium">№{route.number}</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-4 h-4 rounded-full"
+                        style={{ backgroundColor: route.color }}
+                      />
+                      <span className="font-medium">№{route.number}</span>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteRoute(route.id);
+                      }}
+                    >
+                      <Icon name="Trash2" size={12} className="text-red-500" />
+                    </Button>
                   </div>
                   <div className="mt-2 text-xs text-gray-500">
                     Остановок: {route.stops.length}
@@ -523,14 +683,24 @@ const Index = () => {
                       <Icon name="MapPin" size={14} className="text-gray-500" />
                       <span className="text-sm">{stop.name}</span>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 px-2"
-                      onClick={() => setSelectedStopForLabel(stop.id)}
-                    >
-                      <Icon name="AlignCenter" size={12} />
-                    </Button>
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2"
+                        onClick={() => setSelectedStopForLabel(stop.id)}
+                      >
+                        <Icon name="AlignCenter" size={12} />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2"
+                        onClick={() => deleteStop(stop.id)}
+                      >
+                        <Icon name="Trash2" size={12} className="text-red-500" />
+                      </Button>
+                    </div>
                   </div>
                   {selectedStopForLabel === stop.id && (
                     <div className="mt-2 grid grid-cols-4 gap-1">
