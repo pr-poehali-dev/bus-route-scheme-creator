@@ -525,6 +525,18 @@ const Sidebar = ({
                       {isExpanded && (
                         <div className="border-t p-3 space-y-3">
                           <div>
+                            <Label className="text-xs mb-2 block">Название</Label>
+                            <Input
+                              value={stop.name}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                onUpdateStop(stop.id, { name: e.target.value });
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-sm"
+                            />
+                          </div>
+                          <div>
                             <Label className="text-xs mb-2 block">Позиция названия</Label>
                             <div className="grid grid-cols-4 gap-1">
                               {(['top', 'bottom', 'left', 'right'] as const).map(pos => (
