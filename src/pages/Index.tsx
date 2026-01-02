@@ -62,8 +62,8 @@ const Index = () => {
   const [newRouteNumber, setNewRouteNumber] = useState('');
   const [selectedStops, setSelectedStops] = useState<string[]>([]);
   const [selectedStopForLabel, setSelectedStopForLabel] = useState<string | null>(null);
-  const [lineWidth, setLineWidth] = useState(4);
-  const [lineStyle, setLineStyle] = useState<'solid' | 'dashed'>('solid');
+  const [lineWidth] = useState(4);
+  const [lineStyle] = useState<'solid' | 'dashed'>('solid');
   const [selectedLine, setSelectedLine] = useState<string | null>(null);
   const [draggedPoint, setDraggedPoint] = useState<{ lineId: string; pointIndex: number } | null>(null);
 
@@ -285,24 +285,30 @@ const Index = () => {
         }
       }
     } else if (tool === 'edit') {
+      let pointClicked = false;
+      
       if (selectedLine) {
         const line = lines.find(l => l.id === selectedLine);
         if (line) {
           for (let i = 0; i < line.points.length; i++) {
             const p = line.points[i];
-            if (Math.abs(p.x - x) < 8 && Math.abs(p.y - y) < 8) {
+            if (Math.abs(p.x - x) < 10 && Math.abs(p.y - y) < 10) {
               setDraggedPoint({ lineId: line.id, pointIndex: i });
+              pointClicked = true;
               return;
             }
           }
         }
       }
-      const line = findLineAtPosition(x, y);
-      if (line) {
-        setSelectedLine(line.id);
-        toast.success('Линия выбрана. Перетаскивайте оранжевые точки');
-      } else {
-        setSelectedLine(null);
+      
+      if (!pointClicked) {
+        const line = findLineAtPosition(x, y);
+        if (line) {
+          setSelectedLine(line.id);
+          toast.success('Линия выбрана. Перетаскивайте оранжевые точки');
+        } else {
+          setSelectedLine(null);
+        }
       }
     } else if (tool === 'connect') {
       const stop = findStopAtPosition(x, y);
@@ -335,8 +341,8 @@ const Index = () => {
                 routeId: selectedRoute,
                 points: [{ x: lastStop.x, y: lastStop.y }, { x: stop.x, y: stop.y }],
                 color: selectedColor,
-                lineWidth: lineWidth,
-                lineStyle: lineStyle,
+                lineWidth: 4,
+                lineStyle: 'solid',
                 offset: offset,
               };
               setLines([...lines, newLine]);
@@ -382,8 +388,8 @@ const Index = () => {
         routeId: selectedRoute,
         points: currentLine,
         color: selectedColor,
-        lineWidth: lineWidth,
-        lineStyle: lineStyle,
+        lineWidth: 4,
+        lineStyle: 'solid',
         offset: 0,
       };
       setLines([...lines, newLine]);
@@ -469,8 +475,8 @@ const Index = () => {
       number: newRouteNumber,
       color: selectedColor,
       stops: [],
-      lineWidth: lineWidth,
-      lineStyle: lineStyle,
+      lineWidth: 4,
+      lineStyle: 'solid',
     };
     setRoutes([...routes, newRoute]);
     setSelectedRoute(newRoute.id);
@@ -705,9 +711,12 @@ const Index = () => {
                     {stops.map((stop) => (
                       <Card key={stop.id} className="p-2">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Icon name="MapPin" size={14} className="text-gray-500" />
-                            <span className="text-sm">{stop.name}</span>
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <Icon name="MapPin" size={14} className="text-gray-500" />
+                              <span className="text-sm font-medium">{stop.name}</span>
+                            </div>
+                            <span className="text-xs text-gray-400 ml-6">ID: {stop.id}</span>
                           </div>
                           <div className="flex gap-1">
                             <Button
@@ -857,64 +866,7 @@ const Index = () => {
           <TabsContent value="settings" className="flex-1 overflow-hidden">
             <ScrollArea className="h-full">
               <div className="p-4 space-y-4">
-                <div>
-                  <Label className="text-sm font-medium mb-2 block">Цвет линии</Label>
-                  <div className="grid grid-cols-4 gap-2">
-                    {COLORS.map((color) => (
-                      <button
-                        key={color}
-                        onClick={() => setSelectedColor(color)}
-                        className={`w-full h-10 rounded-lg transition-all ${
-                          selectedColor === color
-                            ? 'ring-2 ring-offset-2 ring-gray-900 scale-105'
-                            : 'hover:scale-105'
-                        }`}
-                        style={{ backgroundColor: color }}
-                      />
-                    ))}
-                  </div>
-                </div>
 
-                <div>
-                  <Label className="text-sm font-medium mb-2 block">Толщина линии</Label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="range"
-                      min="2"
-                      max="12"
-                      value={lineWidth}
-                      onChange={(e) => setLineWidth(Number(e.target.value))}
-                      className="flex-1"
-                    />
-                    <span className="text-sm font-medium w-8">{lineWidth}px</span>
-                  </div>
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium mb-2 block">Стиль линии</Label>
-                  <div className="flex gap-2">
-                    <Button
-                      variant={lineStyle === 'solid' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setLineStyle('solid')}
-                      className="flex-1"
-                    >
-                      <Icon name="Minus" size={16} className="mr-1" />
-                      Сплошная
-                    </Button>
-                    <Button
-                      variant={lineStyle === 'dashed' ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => setLineStyle('dashed')}
-                      className="flex-1"
-                    >
-                      <Icon name="Grip" size={16} className="mr-1" />
-                      Пунктир
-                    </Button>
-                  </div>
-                </div>
-
-                <Separator />
 
                 <div>
                   <Label className="text-sm font-medium mb-3 block">Импорт/Экспорт</Label>
@@ -942,8 +894,8 @@ const Index = () => {
       <div className="flex-1 flex items-center justify-center p-8">
         <canvas
           ref={canvasRef}
-          width={1200}
-          height={800}
+          width={1600}
+          height={1000}
           onClick={handleCanvasClick}
           onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleCanvasMouseMove}
