@@ -15,6 +15,7 @@ interface SidebarProps {
   routes: Route[];
   selectedStop: string | null;
   editingSegment: { routeId: string; from: string; to: string } | null;
+  mode: 'select' | 'add-stop';
   onAddStop: (name: string) => void;
   onUpdateStop: (id: string, updates: Partial<Stop>) => void;
   onDeleteStop: (id: string) => void;
@@ -29,6 +30,8 @@ interface SidebarProps {
   onAddSegmentPoint: (routeId: string, from: string, to: string) => void;
   onDeleteSegmentPoint: (routeId: string, from: string, to: string, index: number) => void;
   onAutoRoute: (routeId: string) => void;
+  onSetMode: (mode: 'select' | 'add-stop') => void;
+  onSelectStop: (stopId: string | null) => void;
   onExport: () => void;
   onImport: () => void;
 }
@@ -38,6 +41,7 @@ const Sidebar = ({
   routes,
   selectedStop,
   editingSegment,
+  mode,
   onAddStop,
   onUpdateStop,
   onDeleteStop,
@@ -52,6 +56,8 @@ const Sidebar = ({
   onAddSegmentPoint,
   onDeleteSegmentPoint,
   onAutoRoute,
+  onSetMode,
+  onSelectStop,
   onExport,
   onImport,
 }: SidebarProps) => {
@@ -62,6 +68,8 @@ const Sidebar = ({
   const [newRouteColor, setNewRouteColor] = useState(COLORS[0].value);
   const [newRouteWidth, setNewRouteWidth] = useState(4);
   const [expandedRoute, setExpandedRoute] = useState<string | null>(null);
+  const [expandedStop, setExpandedStop] = useState<string | null>(null);
+  const [addingStopsToRoute, setAddingStopsToRoute] = useState<string | null>(null);
 
   const getNextStopId = () => {
     const max = stops.reduce((m, s) => Math.max(m, parseInt(s.id) || 0), 0);
@@ -298,36 +306,64 @@ const Sidebar = ({
                             )}
                           </div>
 
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                const available = stops.filter(
-                                  s => !route.stops.includes(s.id)
-                                );
-                                if (available.length === 0) {
-                                  toast.error('Все остановки уже добавлены');
-                                  return;
-                                }
-                                // Добавляем первую доступную
-                                onAddStopToRoute(route.id, available[0].id);
-                              }}
-                              className="flex-1"
-                            >
-                              <Icon name="Plus" size={14} className="mr-1" />
-                              Остановку
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => onAutoRoute(route.id)}
-                              className="flex-1"
-                            >
-                              <Icon name="Zap" size={14} className="mr-1" />
-                              Авто-путь
-                            </Button>
-                          </div>
+                          {addingStopsToRoute === route.id ? (
+                            <div className="space-y-2">
+                              <Label className="text-xs">Выберите остановки на схеме или из списка:</Label>
+                              <div className="max-h-40 overflow-y-auto space-y-1">
+                                {stops.filter(s => !route.stops.includes(s.id)).map(stop => (
+                                  <Button
+                                    key={stop.id}
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => {
+                                      onAddStopToRoute(route.id, stop.id);
+                                    }}
+                                    className="w-full text-xs justify-start h-8"
+                                  >
+                                    {stop.id} {stop.name}
+                                  </Button>
+                                ))}
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => setAddingStopsToRoute(null)}
+                                className="w-full"
+                              >
+                                Готово
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const available = stops.filter(
+                                    s => !route.stops.includes(s.id)
+                                  );
+                                  if (available.length === 0) {
+                                    toast.error('Все остановки уже добавлены');
+                                    return;
+                                  }
+                                  setAddingStopsToRoute(route.id);
+                                }}
+                                className="flex-1"
+                              >
+                                <Icon name="Plus" size={14} className="mr-1" />
+                                Остановки
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => onAutoRoute(route.id)}
+                                className="flex-1"
+                              >
+                                <Icon name="Zap" size={14} className="mr-1" />
+                                Авто-путь
+                              </Button>
+                            </div>
+                          )}
 
                           <Button
                             size="sm"
@@ -347,26 +383,57 @@ const Sidebar = ({
             </>
           ) : (
             <>
-              <Card className="p-4 space-y-3">
-                <h3 className="font-semibold text-sm">Новая остановка</h3>
-                <div>
-                  <Label className="text-xs">Название</Label>
-                  <Input
-                    value={newStopName}
-                    onChange={e => setNewStopName(e.target.value)}
-                    placeholder="Центральная"
-                    className="mt-1"
-                    onKeyDown={e => e.key === 'Enter' && handleAddStop()}
-                  />
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant={mode === 'add-stop' ? 'default' : 'outline'}
+                    onClick={() => onSetMode('add-stop')}
+                    className="flex-1"
+                  >
+                    <Icon name="MapPin" size={14} className="mr-1" />
+                    Режим добавления
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={mode === 'select' ? 'default' : 'outline'}
+                    onClick={() => onSetMode('select')}
+                    className="flex-1"
+                  >
+                    <Icon name="Hand" size={14} className="mr-1" />
+                    Выбор
+                  </Button>
                 </div>
-                <div className="text-xs text-gray-500">
-                  Следующий ID: <span className="font-mono font-semibold">{getNextStopId()}</span>
-                </div>
-                <Button onClick={handleAddStop} className="w-full">
-                  <Icon name="Plus" size={16} className="mr-2" />
-                  Добавить остановку
-                </Button>
-              </Card>
+                
+                {mode === 'add-stop' && (
+                  <Card className="p-3 bg-blue-50 border-blue-200">
+                    <p className="text-xs text-blue-900">
+                      Кликните на схему, чтобы добавить остановку
+                    </p>
+                  </Card>
+                )}
+
+                <Card className="p-4 space-y-3">
+                  <h3 className="font-semibold text-sm">Новая остановка</h3>
+                  <div>
+                    <Label className="text-xs">Название</Label>
+                    <Input
+                      value={newStopName}
+                      onChange={e => setNewStopName(e.target.value)}
+                      placeholder="Центральная"
+                      className="mt-1"
+                      onKeyDown={e => e.key === 'Enter' && handleAddStop()}
+                    />
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Следующий ID: <span className="font-mono font-semibold">{getNextStopId()}</span>
+                  </div>
+                  <Button onClick={handleAddStop} className="w-full">
+                    <Icon name="Plus" size={16} className="mr-2" />
+                    Добавить в центр
+                  </Button>
+                </Card>
+              </div>
 
               {selectedStopData && (
                 <Card className="p-4 space-y-3">
@@ -427,28 +494,94 @@ const Sidebar = ({
               <Separator />
 
               <div className="space-y-2">
-                {stops.map(stop => (
-                  <Card
-                    key={stop.id}
-                    className={`p-3 cursor-pointer transition ${
-                      selectedStop === stop.id ? 'ring-2 ring-blue-500' : 'hover:shadow'
-                    }`}
-                    onClick={() => {}}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium text-sm">
-                          {stop.id} {stop.name}
+                {stops.map(stop => {
+                  const isExpanded = expandedStop === stop.id;
+                  return (
+                    <Card key={stop.id} className="overflow-hidden">
+                      <div
+                        className={`p-3 cursor-pointer transition ${
+                          selectedStop === stop.id ? 'bg-blue-50' : 'hover:bg-gray-50'
+                        }`}
+                        onClick={() => {
+                          onSelectStop(stop.id);
+                          setExpandedStop(isExpanded ? null : stop.id);
+                        }}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="font-medium text-sm">
+                              {stop.id} {stop.name}
+                            </div>
+                            {stop.isTerminal && (
+                              <Badge variant="secondary" className="mt-1 text-xs">
+                                Конечная
+                              </Badge>
+                            )}
+                          </div>
+                          <Icon name={isExpanded ? 'ChevronUp' : 'ChevronDown'} size={16} />
                         </div>
-                        {stop.isTerminal && (
-                          <Badge variant="secondary" className="mt-1 text-xs">
-                            Конечная
-                          </Badge>
-                        )}
                       </div>
-                    </div>
-                  </Card>
-                ))}
+                      
+                      {isExpanded && (
+                        <div className="border-t p-3 space-y-3">
+                          <div>
+                            <Label className="text-xs mb-2 block">Позиция названия</Label>
+                            <div className="grid grid-cols-4 gap-1">
+                              {(['top', 'bottom', 'left', 'right'] as const).map(pos => (
+                                <Button
+                                  key={pos}
+                                  size="sm"
+                                  variant={stop.labelPosition === pos ? 'default' : 'outline'}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onUpdateStop(stop.id, { labelPosition: pos });
+                                  }}
+                                >
+                                  <Icon
+                                    name={
+                                      pos === 'top'
+                                        ? 'ArrowUp'
+                                        : pos === 'bottom'
+                                        ? 'ArrowDown'
+                                        : pos === 'left'
+                                        ? 'ArrowLeft'
+                                        : 'ArrowRight'
+                                    }
+                                    size={14}
+                                  />
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <Label className="text-xs">Конечная</Label>
+                            <input
+                              type="checkbox"
+                              checked={stop.isTerminal}
+                              onChange={e => {
+                                e.stopPropagation();
+                                onUpdateStop(stop.id, { isTerminal: e.target.checked });
+                              }}
+                              className="w-4 h-4"
+                            />
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteStop(stop.id);
+                            }}
+                            className="w-full"
+                          >
+                            <Icon name="Trash2" size={14} className="mr-1" />
+                            Удалить остановку
+                          </Button>
+                        </div>
+                      )}
+                    </Card>
+                  );
+                })}
               </div>
             </>
           )}

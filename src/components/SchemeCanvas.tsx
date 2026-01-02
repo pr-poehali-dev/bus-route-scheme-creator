@@ -6,9 +6,11 @@ interface SchemeCanvasProps {
   routes: Route[];
   selectedStop: string | null;
   editingSegment: { routeId: string; from: string; to: string } | null;
+  mode: 'select' | 'add-stop';
   onStopSelect: (stopId: string | null) => void;
   onStopMove: (stopId: string, x: number, y: number) => void;
   onSegmentPointMove: (routeId: string, from: string, to: string, pointIndex: number, x: number, y: number) => void;
+  onCanvasClick: (x: number, y: number) => void;
 }
 
 const SchemeCanvas = ({
@@ -16,9 +18,11 @@ const SchemeCanvas = ({
   routes,
   selectedStop,
   editingSegment,
+  mode,
   onStopSelect,
   onStopMove,
   onSegmentPointMove,
+  onCanvasClick,
 }: SchemeCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -62,10 +66,21 @@ const SchemeCanvas = ({
       ctx.stroke();
     }
 
-    // Маршруты
-    routes.forEach(route => {
+    // Маршруты с параллельным смещением
+    const segmentOffsets = new Map<string, number>();
+    
+    routes.forEach((route, routeIndex) => {
       route.segments.forEach(segment => {
         if (segment.points.length < 2) return;
+
+        // Вычисляем ключ сегмента для определения параллельных линий
+        const segmentKey = [segment.from, segment.to].sort().join('-');
+        const currentOffset = segmentOffsets.get(segmentKey) || 0;
+        segmentOffsets.set(segmentKey, currentOffset + 1);
+        
+        const offset = currentOffset * 8 - (routes.filter(r => 
+          r.segments.some(s => [s.from, s.to].sort().join('-') === segmentKey)
+        ).length - 1) * 4;
 
         ctx.strokeStyle = route.color;
         ctx.lineWidth = route.lineWidth;
@@ -73,9 +88,24 @@ const SchemeCanvas = ({
         ctx.lineJoin = 'round';
 
         ctx.beginPath();
-        ctx.moveTo(segment.points[0].x, segment.points[0].y);
-        for (let i = 1; i < segment.points.length; i++) {
-          ctx.lineTo(segment.points[i].x, segment.points[i].y);
+        
+        // Рисуем с параллельным смещением
+        if (segment.points.length === 2 && offset !== 0) {
+          const p1 = segment.points[0];
+          const p2 = segment.points[1];
+          const dx = p2.x - p1.x;
+          const dy = p2.y - p1.y;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          const perpX = -dy / len * offset;
+          const perpY = dx / len * offset;
+          
+          ctx.moveTo(p1.x + perpX, p1.y + perpY);
+          ctx.lineTo(p2.x + perpX, p2.y + perpY);
+        } else {
+          ctx.moveTo(segment.points[0].x, segment.points[0].y);
+          for (let i = 1; i < segment.points.length; i++) {
+            ctx.lineTo(segment.points[i].x, segment.points[i].y);
+          }
         }
         ctx.stroke();
 
@@ -194,12 +224,18 @@ const SchemeCanvas = ({
     const stop = findStop(x, y);
     if (stop) {
       onStopSelect(stop.id);
-      setIsDragging(true);
-      setDragTarget({ type: 'stop', stopId: stop.id });
+      if (mode === 'select') {
+        setIsDragging(true);
+        setDragTarget({ type: 'stop', stopId: stop.id });
+      }
       return;
     }
 
-    onStopSelect(null);
+    if (mode === 'add-stop') {
+      onCanvasClick(x, y);
+    } else {
+      onStopSelect(null);
+    }
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {

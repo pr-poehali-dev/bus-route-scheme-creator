@@ -13,30 +13,40 @@ const Index = () => {
     from: string;
     to: string;
   } | null>(null);
+  const [mode, setMode] = useState<'select' | 'add-stop'>('select');
 
   const getNextStopId = () => {
     const max = stops.reduce((m, s) => Math.max(m, parseInt(s.id) || 0), 0);
     return String(max + 1).padStart(3, '0');
   };
 
-  const handleAddStop = (name: string) => {
+  const handleAddStop = (name: string, x?: number, y?: number) => {
     const id = getNextStopId();
     
-    // Размещаем остановки в центре холста со смещением
-    const centerX = 1500;
-    const centerY = 1000;
-    const offset = stops.length * 100;
-    const angle = (stops.length * 45 * Math.PI) / 180;
+    let stopX = x;
+    let stopY = y;
+    
+    if (stopX === undefined || stopY === undefined) {
+      // Размещаем остановки в центре холста со смещением
+      const centerX = 1500;
+      const centerY = 1000;
+      const offset = stops.length * 100;
+      const angle = (stops.length * 45 * Math.PI) / 180;
+      stopX = centerX + Math.cos(angle) * offset;
+      stopY = centerY + Math.sin(angle) * offset;
+    }
     
     const newStop: Stop = {
       id,
-      name,
-      x: centerX + Math.cos(angle) * offset,
-      y: centerY + Math.sin(angle) * offset,
+      name: name || `Остановка ${id}`,
+      x: stopX,
+      y: stopY,
       labelPosition: 'top',
       isTerminal: false,
     };
     setStops([...stops, newStop]);
+    setSelectedStop(id);
+    toast.success('Остановка добавлена');
   };
 
   const handleUpdateStop = (id: string, updates: Partial<Stop>) => {
@@ -284,7 +294,8 @@ const Index = () => {
         routes={routes}
         selectedStop={selectedStop}
         editingSegment={editingSegment}
-        onAddStop={handleAddStop}
+        mode={mode}
+        onAddStop={(name) => handleAddStop(name)}
         onUpdateStop={handleUpdateStop}
         onDeleteStop={handleDeleteStop}
         onAddRoute={handleAddRoute}
@@ -298,6 +309,8 @@ const Index = () => {
         onAddSegmentPoint={handleAddSegmentPoint}
         onDeleteSegmentPoint={handleDeleteSegmentPoint}
         onAutoRoute={handleAutoRoute}
+        onSetMode={setMode}
+        onSelectStop={setSelectedStop}
         onExport={handleExport}
         onImport={handleImport}
       />
@@ -306,9 +319,15 @@ const Index = () => {
         routes={routes}
         selectedStop={selectedStop}
         editingSegment={editingSegment}
+        mode={mode}
         onStopSelect={setSelectedStop}
         onStopMove={handleStopMove}
         onSegmentPointMove={handleSegmentPointMove}
+        onCanvasClick={(x, y) => {
+          if (mode === 'add-stop') {
+            handleAddStop('', x, y);
+          }
+        }}
       />
     </div>
   );
