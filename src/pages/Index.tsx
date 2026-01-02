@@ -66,11 +66,10 @@ const Index = () => {
   const [lineStyle, setLineStyle] = useState<'solid' | 'dashed'>('solid');
   const [selectedLine, setSelectedLine] = useState<string | null>(null);
   const [draggedPoint, setDraggedPoint] = useState<{ lineId: string; pointIndex: number } | null>(null);
-  const [parallelOffset, setParallelOffset] = useState(0);
 
   useEffect(() => {
     drawCanvas();
-  }, [stops, lines, currentLine, draggedStop, selectedStops, lineWidth, lineStyle, selectedLine, draggedPoint, parallelOffset]);
+  }, [stops, lines, currentLine, draggedStop, selectedStops, lineWidth, lineStyle, selectedLine, draggedPoint]);
 
   const drawCanvas = () => {
     const canvas = canvasRef.current;
@@ -286,22 +285,23 @@ const Index = () => {
         }
       }
     } else if (tool === 'edit') {
-      const line = findLineAtPosition(x, y);
-      if (line) {
-        setSelectedLine(line.id);
-      } else {
-        if (selectedLine) {
-          const line = lines.find(l => l.id === selectedLine);
-          if (line) {
-            for (let i = 0; i < line.points.length; i++) {
-              const p = line.points[i];
-              if (Math.abs(p.x - x) < 8 && Math.abs(p.y - y) < 8) {
-                setDraggedPoint({ lineId: line.id, pointIndex: i });
-                return;
-              }
+      if (selectedLine) {
+        const line = lines.find(l => l.id === selectedLine);
+        if (line) {
+          for (let i = 0; i < line.points.length; i++) {
+            const p = line.points[i];
+            if (Math.abs(p.x - x) < 8 && Math.abs(p.y - y) < 8) {
+              setDraggedPoint({ lineId: line.id, pointIndex: i });
+              return;
             }
           }
         }
+      }
+      const line = findLineAtPosition(x, y);
+      if (line) {
+        setSelectedLine(line.id);
+        toast.success('Линия выбрана. Перетаскивайте оранжевые точки');
+      } else {
         setSelectedLine(null);
       }
     } else if (tool === 'connect') {
@@ -321,6 +321,15 @@ const Index = () => {
             const lastStopId = selectedStops[selectedStops.length - 1];
             const lastStop = stops.find(s => s.id === lastStopId);
             if (lastStop) {
+              const existingLine = lines.find(line => 
+                (Math.abs(line.points[0].x - lastStop.x) < 5 && Math.abs(line.points[0].y - lastStop.y) < 5 &&
+                 Math.abs(line.points[line.points.length - 1].x - stop.x) < 5 && Math.abs(line.points[line.points.length - 1].y - stop.y) < 5) ||
+                (Math.abs(line.points[0].x - stop.x) < 5 && Math.abs(line.points[0].y - stop.y) < 5 &&
+                 Math.abs(line.points[line.points.length - 1].x - lastStop.x) < 5 && Math.abs(line.points[line.points.length - 1].y - lastStop.y) < 5)
+              );
+              
+              const offset = existingLine ? (existingLine.offset || 0) + 8 : 0;
+              
               const newLine: Line = {
                 id: Date.now().toString(),
                 routeId: selectedRoute,
@@ -328,7 +337,7 @@ const Index = () => {
                 color: selectedColor,
                 lineWidth: lineWidth,
                 lineStyle: lineStyle,
-                offset: parallelOffset,
+                offset: offset,
               };
               setLines([...lines, newLine]);
               addStopToRoute(selectedRoute, stop.id);
@@ -375,7 +384,7 @@ const Index = () => {
         color: selectedColor,
         lineWidth: lineWidth,
         lineStyle: lineStyle,
-        offset: parallelOffset,
+        offset: 0,
       };
       setLines([...lines, newLine]);
       setCurrentLine([]);
@@ -903,32 +912,6 @@ const Index = () => {
                       Пунктир
                     </Button>
                   </div>
-                </div>
-
-                <div>
-                  <Label className="text-sm font-medium mb-2 block">Параллельное смещение</Label>
-                  <p className="text-xs text-gray-500 mb-2">
-                    Для параллельных линий на одном участке
-                  </p>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="range"
-                      min="-20"
-                      max="20"
-                      value={parallelOffset}
-                      onChange={(e) => setParallelOffset(Number(e.target.value))}
-                      className="flex-1"
-                    />
-                    <span className="text-sm font-medium w-12">{parallelOffset}px</span>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setParallelOffset(0)}
-                    className="w-full mt-2"
-                  >
-                    Сбросить смещение
-                  </Button>
                 </div>
 
                 <Separator />
