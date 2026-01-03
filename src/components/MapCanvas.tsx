@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Stop, Route } from '@/types/transport';
@@ -19,181 +19,150 @@ const MapCanvas = ({
   stops,
   routes,
   selectedStops,
-  editingSegment,
   mode,
   onStopSelect,
   onStopMove,
-  onSegmentPointMove,
   onCanvasClick,
 }: MapCanvasProps) => {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const markersRef = useRef<Map<string, L.CircleMarker>>(new Map());
+  const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const polylinesRef = useRef<Map<string, L.Polyline>>(new Map());
-  const [isDragging, setIsDragging] = useState(false);
-  const [draggedStops, setDraggedStops] = useState<string[]>([]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    const luganskCenter = L.latLng(48.5741, 39.3078);
     const map = L.map(containerRef.current, {
-      center: luganskCenter,
+      center: [48.5741, 39.3078],
       zoom: 12,
       zoomControl: true,
       maxBounds: L.latLngBounds(
-        L.latLng(48.35, 39.05),
-        L.latLng(48.80, 39.60)
+        [48.35, 39.05],
+        [48.80, 39.60]
       ),
       maxBoundsViscosity: 0.8,
       minZoom: 11,
     });
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
+      attribution: '© OpenStreetMap',
       maxZoom: 19,
     }).addTo(map);
 
     mapRef.current = map;
 
-    map.on('click', (e) => {
+    map.on('click', (e: L.LeafletMouseEvent) => {
       if (mode === 'add-stop') {
-        const { lat, lng } = e.latlng;
-        onCanvasClick(lng, lat);
+        onCanvasClick(e.latlng.lng, e.latlng.lat);
       } else {
         onStopSelect(null, false);
       }
     });
 
     return () => {
-      map.remove();
-      mapRef.current = null;
+      if (mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+      }
     };
   }, []);
 
   useEffect(() => {
-    if (!mapRef.current) return;
+    const map = mapRef.current;
+    if (!map) return;
 
-    markersRef.current.forEach((marker) => marker.remove());
+    markersRef.current.forEach(m => m.remove());
     markersRef.current.clear();
 
     stops.forEach((stop) => {
       if (!stop.x || !stop.y) return;
-      
+
       const isSelected = selectedStops.includes(stop.id);
-      const latlng = L.latLng(stop.y, stop.x);
-
-      const marker = L.circleMarker(latlng, {
-        radius: stop.isTerminal ? 10 : 7,
-        fillColor: '#FFFFFF',
-        color: isSelected ? '#3B82F6' : '#1F2937',
-        weight: isSelected ? 4 : 3,
-        fillOpacity: 1,
+      
+      const icon = L.divIcon({
+        className: 'custom-stop-marker',
+        html: `
+          <div style="position: relative;">
+            <div style="
+              width: ${stop.isTerminal ? 20 : 14}px;
+              height: ${stop.isTerminal ? 20 : 14}px;
+              background: white;
+              border: ${isSelected ? 4 : 3}px solid ${isSelected ? '#3B82F6' : '#1F2937'};
+              border-radius: 50%;
+              position: absolute;
+              top: -${stop.isTerminal ? 10 : 7}px;
+              left: -${stop.isTerminal ? 10 : 7}px;
+            "></div>
+            <div style="
+              position: absolute;
+              top: -30px;
+              left: 50%;
+              transform: translateX(-50%);
+              background: white;
+              padding: 2px 6px;
+              border-radius: 3px;
+              font-size: 12px;
+              font-weight: 500;
+              white-space: nowrap;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            ">${stop.name}</div>
+          </div>
+        `,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
       });
 
-      marker.bindTooltip(stop.name, {
-        permanent: true,
-        direction: 'top',
-        className: 'stop-label',
-        offset: [0, -10],
+      const marker = L.marker([stop.y, stop.x], { 
+        icon,
+        draggable: true,
       });
 
-      marker.on('click', (e) => {
+      marker.on('click', (e: L.LeafletMouseEvent) => {
         L.DomEvent.stopPropagation(e);
         onStopSelect(stop.id, e.originalEvent.ctrlKey || e.originalEvent.metaKey);
       });
 
-      marker.on('mousedown', () => {
-        const stopsToMove = selectedStops.includes(stop.id) ? selectedStops : [stop.id];
-        setIsDragging(true);
-        setDraggedStops(stopsToMove);
+      marker.on('dragend', () => {
+        const pos = marker.getLatLng();
+        const oldStop = stops.find(s => s.id === stop.id);
+        if (oldStop) {
+          const dx = pos.lng - oldStop.x;
+          const dy = pos.lat - oldStop.y;
+          const stopsToMove = selectedStops.includes(stop.id) ? selectedStops : [stop.id];
+          onStopMove(stopsToMove, dx, dy);
+        }
       });
 
-      marker.addTo(mapRef.current!);
+      marker.addTo(map);
       markersRef.current.set(stop.id, marker);
     });
   }, [stops, selectedStops]);
 
   useEffect(() => {
-    if (!mapRef.current) return;
+    const map = mapRef.current;
+    if (!map) return;
 
-    polylinesRef.current.forEach((line) => line.remove());
+    polylinesRef.current.forEach(line => line.remove());
     polylinesRef.current.clear();
 
     routes.forEach((route) => {
       route.segments.forEach((segment) => {
         if (segment.points.length < 2) return;
 
-        const latlngs = segment.points.map((p) => L.latLng(p.y, p.x));
+        const latlngs = segment.points.map(p => L.latLng(p.y, p.x));
         const polyline = L.polyline(latlngs, {
           color: route.color,
           weight: route.lineWidth,
-          opacity: 0.8,
+          opacity: 0.7,
         });
 
-        polyline.addTo(mapRef.current!);
+        polyline.addTo(map);
         polylinesRef.current.set(`${route.id}-${segment.from}-${segment.to}`, polyline);
       });
     });
   }, [routes]);
 
-  useEffect(() => {
-    if (!mapRef.current || !isDragging || draggedStops.length === 0) return;
-
-    const map = mapRef.current;
-    let lastLatlng: L.LatLng | null = null;
-
-    const handleMouseMove = (e: L.LeafletMouseEvent) => {
-      if (!lastLatlng) {
-        lastLatlng = e.latlng;
-        return;
-      }
-
-      const dlat = e.latlng.lat - lastLatlng.lat;
-      const dlng = e.latlng.lng - lastLatlng.lng;
-
-      onStopMove(draggedStops, dlng, dlat);
-      lastLatlng = e.latlng;
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(false);
-      setDraggedStops([]);
-      lastLatlng = null;
-      map.off('mousemove', handleMouseMove);
-      map.off('mouseup', handleMouseUp);
-    };
-
-    map.on('mousemove', handleMouseMove);
-    map.on('mouseup', handleMouseUp);
-
-    return () => {
-      map.off('mousemove', handleMouseMove);
-      map.off('mouseup', handleMouseUp);
-    };
-  }, [isDragging, draggedStops]);
-
-  return (
-    <div ref={containerRef} className="w-full h-full">
-      <style>{`
-        .stop-label {
-          background: transparent;
-          border: none;
-          box-shadow: none;
-          font-size: 13px;
-          font-weight: 500;
-          color: #1F2937;
-          white-space: nowrap;
-        }
-        .leaflet-tooltip-top:before,
-        .leaflet-tooltip-bottom:before,
-        .leaflet-tooltip-left:before,
-        .leaflet-tooltip-right:before {
-          display: none;
-        }
-      `}</style>
-    </div>
-  );
+  return <div ref={containerRef} className="w-full h-full" />;
 };
 
 export default MapCanvas;
