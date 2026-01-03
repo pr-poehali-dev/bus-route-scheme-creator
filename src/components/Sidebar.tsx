@@ -497,7 +497,7 @@ const Sidebar = ({
                   </div>
                   <Button onClick={handleAddStop} className="w-full">
                     <Icon name="Plus" size={16} className="mr-2" />
-                    Добавить в центр
+                    Добавить на экран
                   </Button>
                 </Card>
 

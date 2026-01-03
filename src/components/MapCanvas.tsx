@@ -13,6 +13,7 @@ interface MapCanvasProps {
   onStopMove: (stopIds: string[], dx: number, dy: number) => void;
   onSegmentPointMove: (routeId: string, from: string, to: string, pointIndex: number, x: number, y: number) => void;
   onCanvasClick: (x: number, y: number) => void;
+  onGetMapCenter?: () => { lat: number; lng: number } | null;
 }
 
 const MapCanvas = ({
@@ -23,6 +24,7 @@ const MapCanvas = ({
   onStopSelect,
   onStopMove,
   onCanvasClick,
+  onGetMapCenter,
 }: MapCanvasProps) => {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -50,6 +52,13 @@ const MapCanvas = ({
     }).addTo(map);
 
     mapRef.current = map;
+
+    if (onGetMapCenter) {
+      (window as any).__getMapCenter = () => {
+        const center = map.getCenter();
+        return { lat: center.lat, lng: center.lng };
+      };
+    }
 
     map.on('click', (e: L.LeafletMouseEvent) => {
       if (mode === 'add-stop') {
@@ -87,17 +96,29 @@ const MapCanvas = ({
         color: isSelected ? '#2563EB' : '#DC2626',
         weight: 1,
         fillOpacity: 1,
-        draggable: true,
-      }) as L.CircleMarker & { dragging?: { enable: () => void } };
+      });
       
-      marker.dragging?.enable();
+      let isDragging = false;
+      let dragStartPos: L.LatLng | null = null;
 
-      marker.on('click', (e: L.LeafletMouseEvent) => {
+      marker.on('mousedown', (e: L.LeafletMouseEvent) => {
+        if (e.originalEvent.button !== 0) return;
+        isDragging = true;
+        dragStartPos = e.latlng;
+        map.dragging.disable();
         L.DomEvent.stopPropagation(e);
-        onStopSelect(stop.id, e.originalEvent.ctrlKey || e.originalEvent.metaKey);
       });
 
-      marker.on('dragend', () => {
+      map.on('mousemove', (e: L.LeafletMouseEvent) => {
+        if (!isDragging || !dragStartPos) return;
+        marker.setLatLng(e.latlng);
+      });
+
+      const handleMouseUp = () => {
+        if (!isDragging) return;
+        isDragging = false;
+        map.dragging.enable();
+        
         const pos = marker.getLatLng();
         const oldStop = stops.find(s => s.id === stop.id);
         if (oldStop) {
@@ -106,7 +127,17 @@ const MapCanvas = ({
           const stopsToMove = selectedStops.includes(stop.id) ? selectedStops : [stop.id];
           onStopMove(stopsToMove, dx, dy);
         }
+        dragStartPos = null;
+      };
+
+      map.on('mouseup', handleMouseUp);
+
+      marker.on('click', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e);
+        onStopSelect(stop.id, e.originalEvent.ctrlKey || e.originalEvent.metaKey);
       });
+
+
 
       marker.addTo(map);
       markersRef.current.set(stop.id, marker);

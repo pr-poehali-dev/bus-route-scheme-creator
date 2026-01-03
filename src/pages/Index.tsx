@@ -53,8 +53,14 @@ const Index = () => {
     let stopY = y;
     
     if (stopX === undefined || stopY === undefined) {
-      stopX = 39.3078;
-      stopY = 48.5741;
+      const mapCenter = (window as any).__getMapCenter?.();
+      if (mapCenter) {
+        stopX = mapCenter.lng;
+        stopY = mapCenter.lat;
+      } else {
+        stopX = 39.3078;
+        stopY = 48.5741;
+      }
     }
     
     const newStop: Stop = {
