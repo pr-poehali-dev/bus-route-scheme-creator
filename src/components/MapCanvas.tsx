@@ -78,8 +78,10 @@ const MapCanvas = ({
     markersRef.current.clear();
 
     stops.forEach((stop) => {
+      if (!stop.x || !stop.y) return;
+      
       const isSelected = selectedStops.includes(stop.id);
-      const latlng = L.latLng(stop.y || 48.5741, stop.x || 39.3078);
+      const latlng = L.latLng(stop.y, stop.x);
 
       const marker = L.circleMarker(latlng, {
         radius: stop.isTerminal ? 10 : 7,
