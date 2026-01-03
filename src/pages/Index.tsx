@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Stop, Route, RouteSegment } from '@/types/transport';
 import SchemeCanvas from '@/components/SchemeCanvas';
@@ -14,6 +14,29 @@ const Index = () => {
     to: string;
   } | null>(null);
   const [mode, setMode] = useState<'select' | 'add-stop'>('select');
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (selectedStops.length === 0) return;
+      
+      const step = e.shiftKey ? 10 : 1;
+      let dx = 0, dy = 0;
+
+      switch (e.key) {
+        case 'ArrowUp': dy = -step; break;
+        case 'ArrowDown': dy = step; break;
+        case 'ArrowLeft': dx = -step; break;
+        case 'ArrowRight': dx = step; break;
+        default: return;
+      }
+
+      e.preventDefault();
+      handleStopMove(selectedStops, dx, dy);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedStops, stops]);
 
   const getNextStopId = () => {
     const max = stops.reduce((m, s) => Math.max(m, parseInt(s.id) || 0), 0);
@@ -67,12 +90,33 @@ const Index = () => {
   };
 
   const handleStopMove = (stopIds: string[], dx: number, dy: number) => {
-    setStops(stops.map(s => {
+    setStops(prev => prev.map(s => {
       if (stopIds.includes(s.id)) {
         return { ...s, x: s.x + dx, y: s.y + dy };
       }
       return s;
     }));
+
+    setRoutes(prev => prev.map(route => ({
+      ...route,
+      segments: route.segments.map(seg => {
+        if (stopIds.includes(seg.from) || stopIds.includes(seg.to)) {
+          return {
+            ...seg,
+            points: seg.points.map((p, i) => {
+              if (i === 0 && stopIds.includes(seg.from)) {
+                return { x: p.x + dx, y: p.y + dy };
+              }
+              if (i === seg.points.length - 1 && stopIds.includes(seg.to)) {
+                return { x: p.x + dx, y: p.y + dy };
+              }
+              return p;
+            })
+          };
+        }
+        return seg;
+      })
+    })));
   };
 
   const handleStopSelect = (stopId: string | null, ctrlKey: boolean) => {

@@ -35,7 +35,6 @@ const SchemeCanvas = ({
     pointIndex?: number;
   } | null>(null);
   const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
-  const [initialPositions, setInitialPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
 
   useEffect(() => {
     draw();
@@ -231,12 +230,6 @@ const SchemeCanvas = ({
         setIsDragging(true);
         setDragTarget({ type: 'stop', stopIds: stopsToMove });
         setDragStartPos({ x, y });
-        const positions = new Map();
-        stopsToMove.forEach(id => {
-          const s = stops.find(st => st.id === id);
-          if (s) positions.set(id, { x: s.x, y: s.y });
-        });
-        setInitialPositions(positions);
       }
       return;
     }
@@ -249,13 +242,21 @@ const SchemeCanvas = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDragging || !dragTarget) return;
+    if (!isDragging || !dragTarget || !dragStartPos) return;
     const { x, y } = getCoords(e);
 
-    if (dragTarget.type === 'stop' && dragTarget.stopIds && dragStartPos) {
+    if (dragTarget.type === 'stop' && dragTarget.stopIds) {
       const dx = x - dragStartPos.x;
       const dy = y - dragStartPos.y;
-      onStopMove(dragTarget.stopIds, dx, dy);
+      dragTarget.stopIds.forEach(id => {
+        const stop = stops.find(s => s.id === id);
+        if (stop) {
+          const newX = stop.x - (dragStartPos.x - x);
+          const newY = stop.y - (dragStartPos.y - y);
+          onStopMove([id], newX - stop.x, newY - stop.y);
+        }
+      });
+      setDragStartPos({ x, y });
     } else if (
       dragTarget.type === 'point' &&
       dragTarget.routeId &&
@@ -278,7 +279,6 @@ const SchemeCanvas = ({
     setIsDragging(false);
     setDragTarget(null);
     setDragStartPos(null);
-    setInitialPositions(new Map());
   };
 
   return (
