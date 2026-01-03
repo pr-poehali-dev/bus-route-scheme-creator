@@ -4,11 +4,11 @@ import { Stop, Route } from '@/types/transport';
 interface SchemeCanvasProps {
   stops: Stop[];
   routes: Route[];
-  selectedStop: string | null;
+  selectedStops: string[];
   editingSegment: { routeId: string; from: string; to: string } | null;
   mode: 'select' | 'add-stop';
-  onStopSelect: (stopId: string | null) => void;
-  onStopMove: (stopId: string, x: number, y: number) => void;
+  onStopSelect: (stopId: string | null, ctrlKey: boolean) => void;
+  onStopMove: (stopIds: string[], x: number, y: number) => void;
   onSegmentPointMove: (routeId: string, from: string, to: string, pointIndex: number, x: number, y: number) => void;
   onCanvasClick: (x: number, y: number) => void;
 }
@@ -16,7 +16,7 @@ interface SchemeCanvasProps {
 const SchemeCanvas = ({
   stops,
   routes,
-  selectedStop,
+  selectedStops,
   editingSegment,
   mode,
   onStopSelect,
@@ -28,16 +28,18 @@ const SchemeCanvas = ({
   const [isDragging, setIsDragging] = useState(false);
   const [dragTarget, setDragTarget] = useState<{
     type: 'stop' | 'point';
-    stopId?: string;
+    stopIds?: string[];
     routeId?: string;
     from?: string;
     to?: string;
     pointIndex?: number;
   } | null>(null);
+  const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
+  const [initialPositions, setInitialPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
 
   useEffect(() => {
     draw();
-  }, [stops, routes, selectedStop, editingSegment]);
+  }, [stops, routes, selectedStops, editingSegment]);
 
   const draw = () => {
     const canvas = canvasRef.current;
@@ -137,7 +139,7 @@ const SchemeCanvas = ({
 
     // Остановки
     stops.forEach(stop => {
-      const isSelected = selectedStop === stop.id;
+      const isSelected = selectedStops.includes(stop.id);
       
       ctx.fillStyle = '#FFFFFF';
       ctx.strokeStyle = isSelected ? '#3B82F6' : '#1F2937';
@@ -156,7 +158,7 @@ const SchemeCanvas = ({
         ctx.fill();
       }
 
-      // Название
+      // Название без ID
       ctx.fillStyle = '#1F2937';
       ctx.font = '13px Inter, sans-serif';
       ctx.textBaseline = 'middle';
@@ -171,7 +173,7 @@ const SchemeCanvas = ({
         case 'right': tx = stop.x + 16; ty = stop.y; ctx.textAlign = 'left'; break;
       }
 
-      ctx.fillText(`${stop.id} ${stop.name}`, tx, ty);
+      ctx.fillText(stop.name, tx, ty);
     });
   };
 
@@ -223,10 +225,18 @@ const SchemeCanvas = ({
 
     const stop = findStop(x, y);
     if (stop) {
-      onStopSelect(stop.id);
+      onStopSelect(stop.id, e.ctrlKey || e.metaKey);
       if (mode === 'select') {
+        const stopsToMove = selectedStops.includes(stop.id) ? selectedStops : [stop.id];
         setIsDragging(true);
-        setDragTarget({ type: 'stop', stopId: stop.id });
+        setDragTarget({ type: 'stop', stopIds: stopsToMove });
+        setDragStartPos({ x, y });
+        const positions = new Map();
+        stopsToMove.forEach(id => {
+          const s = stops.find(st => st.id === id);
+          if (s) positions.set(id, { x: s.x, y: s.y });
+        });
+        setInitialPositions(positions);
       }
       return;
     }
@@ -234,7 +244,7 @@ const SchemeCanvas = ({
     if (mode === 'add-stop') {
       onCanvasClick(x, y);
     } else {
-      onStopSelect(null);
+      onStopSelect(null, false);
     }
   };
 
@@ -242,8 +252,10 @@ const SchemeCanvas = ({
     if (!isDragging || !dragTarget) return;
     const { x, y } = getCoords(e);
 
-    if (dragTarget.type === 'stop' && dragTarget.stopId) {
-      onStopMove(dragTarget.stopId, x, y);
+    if (dragTarget.type === 'stop' && dragTarget.stopIds && dragStartPos) {
+      const dx = x - dragStartPos.x;
+      const dy = y - dragStartPos.y;
+      onStopMove(dragTarget.stopIds, dx, dy);
     } else if (
       dragTarget.type === 'point' &&
       dragTarget.routeId &&
@@ -265,6 +277,8 @@ const SchemeCanvas = ({
   const handleMouseUp = () => {
     setIsDragging(false);
     setDragTarget(null);
+    setDragStartPos(null);
+    setInitialPositions(new Map());
   };
 
   return (

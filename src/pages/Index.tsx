@@ -7,7 +7,7 @@ import Sidebar from '@/components/Sidebar';
 const Index = () => {
   const [stops, setStops] = useState<Stop[]>([]);
   const [routes, setRoutes] = useState<Route[]>([]);
-  const [selectedStop, setSelectedStop] = useState<string | null>(null);
+  const [selectedStops, setSelectedStops] = useState<string[]>([]);
   const [editingSegment, setEditingSegment] = useState<{
     routeId: string;
     from: string;
@@ -45,7 +45,7 @@ const Index = () => {
       isTerminal: false,
     };
     setStops([...stops, newStop]);
-    setSelectedStop(id);
+    setSelectedStops([id]);
     toast.success('Остановка добавлена');
   };
 
@@ -62,12 +62,57 @@ const Index = () => {
         segments: r.segments.filter(seg => seg.from !== id && seg.to !== id),
       }))
     );
-    if (selectedStop === id) setSelectedStop(null);
+    setSelectedStops(selectedStops.filter(sid => sid !== id));
     toast.success('Остановка удалена');
   };
 
-  const handleStopMove = (id: string, x: number, y: number) => {
-    setStops(stops.map(s => (s.id === id ? { ...s, x, y } : s)));
+  const handleStopMove = (stopIds: string[], dx: number, dy: number) => {
+    setStops(stops.map(s => {
+      if (stopIds.includes(s.id)) {
+        return { ...s, x: s.x + dx, y: s.y + dy };
+      }
+      return s;
+    }));
+  };
+
+  const handleStopSelect = (stopId: string | null, ctrlKey: boolean) => {
+    if (!stopId) {
+      setSelectedStops([]);
+      return;
+    }
+    
+    if (ctrlKey) {
+      setSelectedStops(prev => 
+        prev.includes(stopId) 
+          ? prev.filter(id => id !== stopId)
+          : [...prev, stopId]
+      );
+    } else {
+      setSelectedStops([stopId]);
+    }
+  };
+
+  const handleAlignStops = (axis: 'horizontal' | 'vertical') => {
+    if (selectedStops.length < 2) {
+      toast.error('Выберите минимум 2 остановки');
+      return;
+    }
+
+    const selectedStopsData = stops.filter(s => selectedStops.includes(s.id));
+    
+    if (axis === 'horizontal') {
+      const avgY = selectedStopsData.reduce((sum, s) => sum + s.y, 0) / selectedStopsData.length;
+      setStops(stops.map(s => 
+        selectedStops.includes(s.id) ? { ...s, y: avgY } : s
+      ));
+      toast.success('Остановки выровнены по горизонтали');
+    } else {
+      const avgX = selectedStopsData.reduce((sum, s) => sum + s.x, 0) / selectedStopsData.length;
+      setStops(stops.map(s => 
+        selectedStops.includes(s.id) ? { ...s, x: avgX } : s
+      ));
+      toast.success('Остановки выровнены по вертикали');
+    }
   };
 
   const handleAddRoute = (number: string, name: string, color: string, width: number) => {
@@ -292,7 +337,7 @@ const Index = () => {
       <Sidebar
         stops={stops}
         routes={routes}
-        selectedStop={selectedStop}
+        selectedStops={selectedStops}
         editingSegment={editingSegment}
         mode={mode}
         onAddStop={(name) => handleAddStop(name)}
@@ -310,17 +355,18 @@ const Index = () => {
         onDeleteSegmentPoint={handleDeleteSegmentPoint}
         onAutoRoute={handleAutoRoute}
         onSetMode={setMode}
-        onSelectStop={setSelectedStop}
+        onSelectStop={handleStopSelect}
+        onAlignStops={handleAlignStops}
         onExport={handleExport}
         onImport={handleImport}
       />
       <SchemeCanvas
         stops={stops}
         routes={routes}
-        selectedStop={selectedStop}
+        selectedStops={selectedStops}
         editingSegment={editingSegment}
         mode={mode}
-        onStopSelect={setSelectedStop}
+        onStopSelect={handleStopSelect}
         onStopMove={handleStopMove}
         onSegmentPointMove={handleSegmentPointMove}
         onCanvasClick={(x, y) => {

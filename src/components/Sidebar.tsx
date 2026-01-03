@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 interface SidebarProps {
   stops: Stop[];
   routes: Route[];
-  selectedStop: string | null;
+  selectedStops: string[];
   editingSegment: { routeId: string; from: string; to: string } | null;
   mode: 'select' | 'add-stop';
   onAddStop: (name: string) => void;
@@ -31,7 +31,8 @@ interface SidebarProps {
   onDeleteSegmentPoint: (routeId: string, from: string, to: string, index: number) => void;
   onAutoRoute: (routeId: string) => void;
   onSetMode: (mode: 'select' | 'add-stop') => void;
-  onSelectStop: (stopId: string | null) => void;
+  onSelectStop: (stopId: string | null, ctrlKey: boolean) => void;
+  onAlignStops: (axis: 'horizontal' | 'vertical') => void;
   onExport: () => void;
   onImport: () => void;
 }
@@ -39,7 +40,7 @@ interface SidebarProps {
 const Sidebar = ({
   stops,
   routes,
-  selectedStop,
+  selectedStops,
   editingSegment,
   mode,
   onAddStop,
@@ -58,6 +59,7 @@ const Sidebar = ({
   onAutoRoute,
   onSetMode,
   onSelectStop,
+  onAlignStops,
   onExport,
   onImport,
 }: SidebarProps) => {
@@ -97,7 +99,7 @@ const Sidebar = ({
     toast.success('Маршрут добавлен');
   };
 
-  const selectedStopData = stops.find(s => s.id === selectedStop);
+  const selectedStopData = selectedStops.length === 1 ? stops.find(s => s.id === selectedStops[0]) : null;
 
   return (
     <div className="w-96 bg-white border-r flex flex-col">
@@ -433,6 +435,32 @@ const Sidebar = ({
                     Добавить в центр
                   </Button>
                 </Card>
+
+                {selectedStops.length > 1 && (
+                  <Card className="p-4 space-y-3">
+                    <h3 className="font-semibold text-sm">Выделено: {selectedStops.length}</h3>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onAlignStops('horizontal')}
+                        className="flex-1"
+                      >
+                        <Icon name="AlignHorizontalDistributeCenter" size={14} className="mr-1" />
+                        По горизонтали
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onAlignStops('vertical')}
+                        className="flex-1"
+                      >
+                        <Icon name="AlignVerticalDistributeCenter" size={14} className="mr-1" />
+                        По вертикали
+                      </Button>
+                    </div>
+                  </Card>
+                )}
               </div>
 
               {selectedStopData && (
@@ -500,10 +528,10 @@ const Sidebar = ({
                     <Card key={stop.id} className="overflow-hidden">
                       <div
                         className={`p-3 cursor-pointer transition ${
-                          selectedStop === stop.id ? 'bg-blue-50' : 'hover:bg-gray-50'
+                          selectedStops.includes(stop.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
                         }`}
-                        onClick={() => {
-                          onSelectStop(stop.id);
+                        onClick={(e) => {
+                          onSelectStop(stop.id, e.ctrlKey || e.metaKey);
                           setExpandedStop(isExpanded ? null : stop.id);
                         }}
                       >
