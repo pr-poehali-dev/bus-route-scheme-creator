@@ -16,7 +16,9 @@ interface SidebarProps {
   selectedStops: string[];
   editingSegment: { routeId: string; from: string; to: string } | null;
   mode: 'select' | 'add-stop';
-  viewMode: 'map';
+  viewMode: 'edit' | 'view';
+  selectedRouteId?: string | null;
+  onSelectRoute?: (routeId: string | null) => void;
   onAddStop: (name: string) => void;
   onUpdateStop: (id: string, updates: Partial<Stop>) => void;
   onDeleteStop: (id: string) => void;
@@ -32,7 +34,7 @@ interface SidebarProps {
   onDeleteSegmentPoint: (routeId: string, from: string, to: string, index: number) => void;
   onAutoRoute: (routeId: string) => void;
   onSetMode: (mode: 'select' | 'add-stop') => void;
-  onSetViewMode: (mode: 'map') => void;
+  onSetViewMode: (mode: 'edit' | 'view') => void;
   onSelectStop: (stopId: string | null, ctrlKey: boolean) => void;
   onAlignStops: (axis: 'horizontal' | 'vertical') => void;
   onExport: () => void;
@@ -46,6 +48,7 @@ const Sidebar = ({
   editingSegment,
   mode,
   viewMode,
+  selectedRouteId,
   onAddStop,
   onUpdateStop,
   onDeleteStop,
@@ -62,6 +65,7 @@ const Sidebar = ({
   onAutoRoute,
   onSetMode,
   onSetViewMode,
+  onSelectRoute,
   onSelectStop,
   onAlignStops,
   onExport,
@@ -110,6 +114,27 @@ const Sidebar = ({
       <div className="p-6 border-b">
         <h1 className="text-xl font-bold">Редактор схем</h1>
         <p className="text-sm text-gray-500 mt-1">Транспортные маршруты</p>
+        
+        <div className="flex gap-2 mt-4">
+          <Button
+            size="sm"
+            variant={viewMode === 'edit' ? 'default' : 'outline'}
+            onClick={() => onSetViewMode('edit')}
+            className="flex-1"
+          >
+            <Icon name="Pencil" size={14} className="mr-1" />
+            Редактор
+          </Button>
+          <Button
+            size="sm"
+            variant={viewMode === 'view' ? 'default' : 'outline'}
+            onClick={() => onSetViewMode('view')}
+            className="flex-1"
+          >
+            <Icon name="Eye" size={14} className="mr-1" />
+            Просмотр
+          </Button>
+        </div>
       </div>
 
       <div className="flex border-b">
@@ -137,7 +162,43 @@ const Sidebar = ({
 
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
-          {tab === 'routes' ? (
+          {viewMode === 'view' ? (
+            <div className="space-y-2">
+              <h3 className="font-semibold text-sm px-1 mb-3">Выберите маршрут</h3>
+              {routes.map(route => (
+                <Card 
+                  key={route.id}
+                  className={`p-3 cursor-pointer transition ${
+                    selectedRouteId === route.id ? 'ring-2 ring-blue-500' : 'hover:bg-gray-50'
+                  }`}
+                  onClick={() => onSelectRoute?.(selectedRouteId === route.id ? null : route.id)}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-10 h-10 rounded flex items-center justify-center text-white font-bold text-lg"
+                      style={{ backgroundColor: route.color }}
+                    >
+                      {route.number}
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-semibold">№{route.number}</div>
+                      {route.name && (
+                        <div className="text-xs text-gray-500">{route.name}</div>
+                      )}
+                      <div className="text-xs text-gray-400 mt-1">
+                        {route.stops.length} остановок
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+              {routes.length === 0 && (
+                <p className="text-sm text-gray-500 text-center py-8">
+                  Нет маршрутов. Переключитесь в режим редактирования для создания.
+                </p>
+              )}
+            </div>
+          ) : tab === 'routes' ? (
             <>
               <Card className="p-4 space-y-3">
                 <h3 className="font-semibold text-sm">Новый маршрут</h3>

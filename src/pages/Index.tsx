@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Stop, Route, RouteSegment } from '@/types/transport';
 import MapCanvas from '@/components/MapCanvas';
+import ViewMapCanvas from '@/components/ViewMapCanvas';
 import Sidebar from '@/components/Sidebar';
 
 const Index = () => {
@@ -14,7 +15,8 @@ const Index = () => {
     to: string;
   } | null>(null);
   const [mode, setMode] = useState<'select' | 'add-stop'>('select');
-  const [viewMode, setViewMode] = useState<'map'>('map');
+  const [viewMode, setViewMode] = useState<'edit' | 'view'>('edit');
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -381,6 +383,7 @@ const Index = () => {
         editingSegment={editingSegment}
         mode={mode}
         viewMode={viewMode}
+        selectedRouteId={selectedRouteId}
         onAddStop={(name) => handleAddStop(name)}
         onUpdateStop={handleUpdateStop}
         onDeleteStop={handleDeleteStop}
@@ -397,26 +400,35 @@ const Index = () => {
         onAutoRoute={handleAutoRoute}
         onSetMode={setMode}
         onSetViewMode={setViewMode}
+        onSelectRoute={setSelectedRouteId}
         onSelectStop={handleStopSelect}
         onAlignStops={handleAlignStops}
         onExport={handleExport}
         onImport={handleImport}
       />
-      <MapCanvas
-        stops={stops}
-        routes={routes}
-        selectedStops={selectedStops}
-        editingSegment={editingSegment}
-        mode={mode}
-        onStopSelect={handleStopSelect}
-        onStopMove={handleStopMove}
-        onSegmentPointMove={handleSegmentPointMove}
-        onCanvasClick={(x, y) => {
-          if (mode === 'add-stop') {
-            handleAddStop('', x, y);
-          }
-        }}
-      />
+      {viewMode === 'edit' ? (
+        <MapCanvas
+          stops={stops}
+          routes={routes}
+          selectedStops={selectedStops}
+          editingSegment={editingSegment}
+          mode={mode}
+          onStopSelect={handleStopSelect}
+          onStopMove={handleStopMove}
+          onSegmentPointMove={handleSegmentPointMove}
+          onCanvasClick={(x, y) => {
+            if (mode === 'add-stop') {
+              handleAddStop('', x, y);
+            }
+          }}
+        />
+      ) : (
+        <ViewMapCanvas
+          stops={stops}
+          routes={routes}
+          selectedRouteId={selectedRouteId}
+        />
+      )}
     </div>
   );
 };

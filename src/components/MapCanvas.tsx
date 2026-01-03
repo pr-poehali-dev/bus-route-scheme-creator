@@ -26,7 +26,7 @@ const MapCanvas = ({
 }: MapCanvasProps) => {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const markersRef = useRef<Map<string, L.CircleMarker>>(new Map());
   const polylinesRef = useRef<Map<string, L.Polyline>>(new Map());
 
   useEffect(() => {
@@ -79,43 +79,18 @@ const MapCanvas = ({
 
       const isSelected = selectedStops.includes(stop.id);
       
-      const icon = L.divIcon({
-        className: 'custom-stop-marker',
-        html: `
-          <div style="position: relative;">
-            <div style="
-              width: ${stop.isTerminal ? 20 : 14}px;
-              height: ${stop.isTerminal ? 20 : 14}px;
-              background: white;
-              border: ${isSelected ? 4 : 3}px solid ${isSelected ? '#3B82F6' : '#1F2937'};
-              border-radius: 50%;
-              position: absolute;
-              top: -${stop.isTerminal ? 10 : 7}px;
-              left: -${stop.isTerminal ? 10 : 7}px;
-            "></div>
-            <div style="
-              position: absolute;
-              top: -30px;
-              left: 50%;
-              transform: translateX(-50%);
-              background: white;
-              padding: 2px 6px;
-              border-radius: 3px;
-              font-size: 12px;
-              font-weight: 500;
-              white-space: nowrap;
-              box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-            ">${stop.name}</div>
-          </div>
-        `,
-        iconSize: [0, 0],
-        iconAnchor: [0, 0],
-      });
-
-      const marker = L.marker([stop.y, stop.x], { 
-        icon,
+      const radius = stop.isTerminal ? 8 : 4;
+      
+      const marker = L.circleMarker([stop.y, stop.x], {
+        radius,
+        fillColor: isSelected ? '#3B82F6' : '#EF4444',
+        color: isSelected ? '#2563EB' : '#DC2626',
+        weight: 1,
+        fillOpacity: 1,
         draggable: true,
-      });
+      }) as L.CircleMarker & { dragging?: { enable: () => void } };
+      
+      marker.dragging?.enable();
 
       marker.on('click', (e: L.LeafletMouseEvent) => {
         L.DomEvent.stopPropagation(e);
