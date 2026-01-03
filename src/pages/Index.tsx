@@ -51,8 +51,8 @@ const Index = () => {
     let stopY = y;
     
     if (stopX === undefined || stopY === undefined) {
-      stopX = 37.618423;
-      stopY = 55.751244;
+      stopX = 39.3078;
+      stopY = 48.5741;
     }
     
     const newStop: Stop = {

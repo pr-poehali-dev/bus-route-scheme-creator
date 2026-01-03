@@ -36,10 +36,17 @@ const MapCanvas = ({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
+    const luganskCenter = L.latLng(48.5741, 39.3078);
     const map = L.map(containerRef.current, {
-      center: [55.751244, 37.618423],
-      zoom: 13,
+      center: luganskCenter,
+      zoom: 12,
       zoomControl: true,
+      maxBounds: L.latLngBounds(
+        L.latLng(48.35, 39.05),
+        L.latLng(48.80, 39.60)
+      ),
+      maxBoundsViscosity: 0.8,
+      minZoom: 11,
     });
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -72,7 +79,7 @@ const MapCanvas = ({
 
     stops.forEach((stop) => {
       const isSelected = selectedStops.includes(stop.id);
-      const latlng = L.latLng(stop.y, stop.x);
+      const latlng = L.latLng(stop.y || 48.5741, stop.x || 39.3078);
 
       const marker = L.circleMarker(latlng, {
         radius: stop.isTerminal ? 10 : 7,
