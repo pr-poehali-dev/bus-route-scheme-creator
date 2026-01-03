@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Stop, Route } from '@/types/transport';
@@ -20,16 +20,46 @@ const MapCanvas = ({
   stops,
   routes,
   selectedStops,
+  editingSegment,
   mode,
   onStopSelect,
   onStopMove,
+  onSegmentPointMove,
   onCanvasClick,
   onGetMapCenter,
 }: MapCanvasProps) => {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const markersRef = useRef<Map<string, L.CircleMarker>>(new Map());
+  const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const polylinesRef = useRef<Map<string, L.Polyline>>(new Map());
+  const segmentEditMarkersRef = useRef<L.CircleMarker[]>([]);
+  const [editingSegmentState, setEditingSegmentState] = useState<{
+    routeId: string;
+    from: string;
+    to: string;
+    points: { x: number; y: number }[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (editingSegment) {
+      const route = routes.find(r => r.id === editingSegment.routeId);
+      if (route) {
+        const segment = route.segments.find(
+          s => s.from === editingSegment.from && s.to === editingSegment.to
+        );
+        if (segment) {
+          setEditingSegmentState({
+            routeId: editingSegment.routeId,
+            from: editingSegment.from,
+            to: editingSegment.to,
+            points: segment.points,
+          });
+        }
+      }
+    } else {
+      setEditingSegmentState(null);
+    }
+  }, [editingSegment, routes]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -88,15 +118,23 @@ const MapCanvas = ({
 
       const isSelected = selectedStops.includes(stop.id);
       
-      const radius = stop.isTerminal ? 8 : 4;
+      const size = stop.isTerminal ? 16 : 8;
       
-      const marker = L.circleMarker([stop.y, stop.x], {
-        radius,
-        fillColor: isSelected ? '#3B82F6' : '#EF4444',
-        color: isSelected ? '#2563EB' : '#DC2626',
-        weight: 1,
-        fillOpacity: 1,
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="
+          width: ${size}px;
+          height: ${size}px;
+          background-color: ${isSelected ? '#3B82F6' : '#EF4444'};
+          border: 1px solid ${isSelected ? '#2563EB' : '#DC2626'};
+          border-radius: 50%;
+          margin-left: -${size/2}px;
+          margin-top: -${size/2}px;
+        "></div>`,
+        iconSize: [size, size],
       });
+      
+      const marker = L.marker([stop.y, stop.x], { icon });
       
       let isDragging = false;
       let dragStartPos: L.LatLng | null = null;
@@ -150,6 +188,8 @@ const MapCanvas = ({
 
     polylinesRef.current.forEach(line => line.remove());
     polylinesRef.current.clear();
+    segmentEditMarkersRef.current.forEach(m => m.remove());
+    segmentEditMarkersRef.current = [];
 
     routes.forEach((route) => {
       route.segments.forEach((segment) => {
@@ -167,6 +207,73 @@ const MapCanvas = ({
       });
     });
   }, [routes]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    segmentEditMarkersRef.current.forEach(m => m.remove());
+    segmentEditMarkersRef.current = [];
+
+    if (!editingSegmentState) return;
+
+    editingSegmentState.points.forEach((point, index) => {
+      const marker = L.circleMarker([point.y, point.x], {
+        radius: 6,
+        fillColor: '#F97316',
+        color: '#FFFFFF',
+        weight: 2,
+        fillOpacity: 1,
+      });
+
+      let isDragging = false;
+
+      marker.on('mousedown', (e: L.LeafletMouseEvent) => {
+        isDragging = true;
+        map.dragging.disable();
+        L.DomEvent.stopPropagation(e);
+      });
+
+      map.on('mousemove', (e: L.LeafletMouseEvent) => {
+        if (!isDragging) return;
+        marker.setLatLng(e.latlng);
+        
+        const newPoints = [...editingSegmentState.points];
+        newPoints[index] = { x: e.latlng.lng, y: e.latlng.lat };
+        setEditingSegmentState({ ...editingSegmentState, points: newPoints });
+      });
+
+      const handleMouseUp = () => {
+        if (!isDragging) return;
+        isDragging = false;
+        map.dragging.enable();
+        
+        const pos = marker.getLatLng();
+        if (editingSegmentState) {
+          onSegmentPointMove(
+            editingSegmentState.routeId,
+            editingSegmentState.from,
+            editingSegmentState.to,
+            index,
+            pos.lng,
+            pos.lat
+          );
+        }
+      };
+
+      map.on('mouseup', handleMouseUp);
+
+      marker.on('contextmenu', () => {
+        if (editingSegmentState.points.length > 2) {
+          const newPoints = editingSegmentState.points.filter((_, i) => i !== index);
+          setEditingSegmentState({ ...editingSegmentState, points: newPoints });
+        }
+      });
+
+      marker.addTo(map);
+      segmentEditMarkersRef.current.push(marker);
+    });
+  }, [editingSegmentState]);
 
   return <div ref={containerRef} className="w-full h-full" />;
 };
