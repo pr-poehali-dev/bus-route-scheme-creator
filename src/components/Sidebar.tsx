@@ -16,6 +16,7 @@ interface SidebarProps {
   selectedStops: string[];
   editingSegment: { routeId: string; from: string; to: string } | null;
   mode: 'select' | 'add-stop';
+  viewMode: 'map';
   onAddStop: (name: string) => void;
   onUpdateStop: (id: string, updates: Partial<Stop>) => void;
   onDeleteStop: (id: string) => void;
@@ -31,6 +32,7 @@ interface SidebarProps {
   onDeleteSegmentPoint: (routeId: string, from: string, to: string, index: number) => void;
   onAutoRoute: (routeId: string) => void;
   onSetMode: (mode: 'select' | 'add-stop') => void;
+  onSetViewMode: (mode: 'map') => void;
   onSelectStop: (stopId: string | null, ctrlKey: boolean) => void;
   onAlignStops: (axis: 'horizontal' | 'vertical') => void;
   onExport: () => void;
@@ -43,6 +45,7 @@ const Sidebar = ({
   selectedStops,
   editingSegment,
   mode,
+  viewMode,
   onAddStop,
   onUpdateStop,
   onDeleteStop,
@@ -58,6 +61,7 @@ const Sidebar = ({
   onDeleteSegmentPoint,
   onAutoRoute,
   onSetMode,
+  onSetViewMode,
   onSelectStop,
   onAlignStops,
   onExport,

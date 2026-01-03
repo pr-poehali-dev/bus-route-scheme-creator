@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Stop, Route, RouteSegment } from '@/types/transport';
-import SchemeCanvas from '@/components/SchemeCanvas';
+import MapCanvas from '@/components/MapCanvas';
 import Sidebar from '@/components/Sidebar';
 
 const Index = () => {
@@ -14,6 +14,7 @@ const Index = () => {
     to: string;
   } | null>(null);
   const [mode, setMode] = useState<'select' | 'add-stop'>('select');
+  const [viewMode, setViewMode] = useState<'map'>('map');
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -50,13 +51,8 @@ const Index = () => {
     let stopY = y;
     
     if (stopX === undefined || stopY === undefined) {
-      // Размещаем остановки в центре холста со смещением
-      const centerX = 1500;
-      const centerY = 1000;
-      const offset = stops.length * 100;
-      const angle = (stops.length * 45 * Math.PI) / 180;
-      stopX = centerX + Math.cos(angle) * offset;
-      stopY = centerY + Math.sin(angle) * offset;
+      stopX = 37.618423;
+      stopY = 55.751244;
     }
     
     const newStop: Stop = {
@@ -384,6 +380,7 @@ const Index = () => {
         selectedStops={selectedStops}
         editingSegment={editingSegment}
         mode={mode}
+        viewMode={viewMode}
         onAddStop={(name) => handleAddStop(name)}
         onUpdateStop={handleUpdateStop}
         onDeleteStop={handleDeleteStop}
@@ -399,12 +396,13 @@ const Index = () => {
         onDeleteSegmentPoint={handleDeleteSegmentPoint}
         onAutoRoute={handleAutoRoute}
         onSetMode={setMode}
+        onSetViewMode={setViewMode}
         onSelectStop={handleStopSelect}
         onAlignStops={handleAlignStops}
         onExport={handleExport}
         onImport={handleImport}
       />
-      <SchemeCanvas
+      <MapCanvas
         stops={stops}
         routes={routes}
         selectedStops={selectedStops}
